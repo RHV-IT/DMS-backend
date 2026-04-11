@@ -1,0 +1,37 @@
+{
+  "name": "nodemon",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "body": "^5.1.0",
+    "body-parser": "^2.2.0",
+    "connect-mongodb-session": "^5.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "csurf": "^1.11.0",
+    "dotenv": "^17.2.3",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongodb": "^6.20.0",
+    "multer": "^2.0.2",
+    "mysql2": "^3.14.5",
+    "nodemailer": "^8.0.3",
+    "nodemon": "^3.1.9",
+    "parser": "^0.1.4",
+    "uuid": "^11.1.0",
+    "xss": "^1.0.15"
+  }
+}
