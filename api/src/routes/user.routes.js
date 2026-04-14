@@ -1,0 +1,38 @@
+const express = require('express');
+const { body } = require('express-validator');
+const router = express.Router();
+const userController = require('../controllers/userController');
+const auth = require('../middlewares/authMiddleware');
+const { roleMiddleware } = require('../middlewares/roleMiddleware');
+
+router.use(auth);
+
+router.get('/', roleMiddleware('admin', 'hod'), userController.getAllUsers);
+router.get('/:id', userController.getUserById);
+
+router.post(
+  '/',
+  roleMiddleware('admin'),
+  [
+    body('name').notEmpty().withMessage('Name is required'),
+    body('email').isEmail().withMessage('Valid email is required'),
+    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+    body('department').notEmpty().withMessage('Department is required'),
+    body('role').isIn(['admin', 'hod', 'user']).withMessage('Role is required (admin, hod, or user)')
+  ],
+  userController.createUser
+);
+
+router.put('/:id', roleMiddleware('admin', 'hod'), userController.updateUser);
+
+router.post('/:id/reset', roleMiddleware('admin'), userController.resetPassword);
+
+router.post('/:id/suspend', roleMiddleware('admin'), userController.suspendUser);
+
+router.post('/:id/restore', roleMiddleware('admin'), userController.restoreUser);
+
+router.post('/:id/delete', roleMiddleware('admin'), userController.deleteUser);
+
+router.post('/:id/activate', roleMiddleware('admin'), userController.activateUser);
+
+module.exports = router;
