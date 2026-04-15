@@ -65,24 +65,44 @@ api/
 │   ├── config/
 │   │   ├── database.js        # MongoDB connection
 │   │   └── logger.js          # Winston logger configuration
-│   ├── models/
-│   │   ├── User.js            # User model with auth fields
-│   │   ├── Role.js            # Role and permissions
-│   │   ├── File.js            # File metadata
-│   │   ├── FileVersion.js     # File versioning
-│   │   ├── Permission.js      # Access control
-│   │   ├── AuditLog.js        # Activity logging
-│   │   └── Notification.js    # User notifications
+│   ├── constants/
+│   │   └── index.js          # App constants (roles, permissions, etc.)
 │   ├── controllers/          # Request handlers
+│   │   ├── authController.js
+│   │   ├── userController.js
+│   │   ├── fileController.js
+│   │   ├── permissionController.js
+│   │   ├── notificationController.js
+│   │   └── auditLogController.js
+│   ├── helpers/
+│   │   ├── index.js          # Helper exports
+│   │   ├── ApiError.js       # Custom error class
+│   │   ├── responseHandler.js # Response formatting
+│   │   └── jwtHelper.js      # JWT utilities
+│   ├── middlewares/          # Express middlewares
+│   │   ├── authMiddleware.js
+│   │   ├── roleMiddleware.js
+│   │   ├── uploadMiddleware.js
+│   │   └── errorMiddleware.js
+│   ├── models/              # Mongoose schemas
+│   │   ├── User.js
+│   │   ├── Role.js
+│   │   ├── File.js
+│   │   ├── FileVersion.js
+│   │   ├── Permission.js
+│   │   ├── AuditLog.js
+│   │   └── Notification.js
 │   ├── routes/               # API route definitions
-│   ├── middlewares/          # Auth, upload, error handling
 │   ├── services/             # Business logic
-│   └── utils/                 # Seed script, swagger config
+│   ├── utils/                # Utilities (seed, swagger)
+│   └── validators/           # Custom validators
+│       └── customValidators.js
 ├── uploads/                  # File storage directory
 ├── .env                      # Environment variables
 ├── .env.example              # Example environment file
 ├── package.json
-└── README.md
+├── README.md
+└── DOCUMENTATION.md         # Detailed API documentation
 ```
 
 ## Setup Instructions
