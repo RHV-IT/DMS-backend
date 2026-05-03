@@ -97,6 +97,5 @@ pendingScanSchema.index({ assignedTo: 1 }); // For user's assigned scans
 pendingScanSchema.index({ machineId: 1 }); // For machine-specific queries
 pendingScanSchema.index({ machineId: 1, fileFingerprint: 1 }); // For deduplication
 pendingScanSchema.index({ fileFingerprint: 1, status: 1 }); // For status-based fingerprint queries
-pendingScanSchema.index({ createdAt: 1 }, { expireAfterSeconds: 72 * 60 * 60 }); // TTL: 3 days
 
 module.exports = mongoose.model('PendingScan', pendingScanSchema);
