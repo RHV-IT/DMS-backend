@@ -27,9 +27,9 @@
     "express": "^4.21.0",
     "express-validator": "^7.2.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.8.0",
-    "multer": "^1.4.5-lts.1",
-    "nodemailer": "^8.0.5",
+    "mongoose": "^9.6.1",
+    "multer": "^2.1.1",
+    "nodemailer": "^8.0.7",
     "pdfkit": "^0.18.0",
     "sharp": "^0.34.5",
     "swagger-jsdoc": "^6.2.8",
@@ -39,6 +39,6 @@
     "winston": "^3.15.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.7"
+    "nodemon": "^3.1.14"
   }
 }
