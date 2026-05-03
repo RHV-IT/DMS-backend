@@ -1,0 +1,8 @@
+# Scanner Agent
+
+node_modules/
+processed-files.json
+scanner-agent.log
+config.json
+.env
+*.log

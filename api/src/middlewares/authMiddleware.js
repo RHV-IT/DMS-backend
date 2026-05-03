@@ -4,13 +4,19 @@ const authService = require('../services/authService');
 
 const auth = async (req, res, next) => {
   try {
+    let token = null;
     const authHeader = req.headers.authorization;
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    } else if (req.cookies && req.cookies.token) {
+      token = req.cookies.token;
+    }
+    
+    if (!token) {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
 
-    const token = authHeader.split(' ')[1];
     const decoded = await authService.verifyAccessToken(token);
 
     if (!decoded) {
@@ -29,6 +35,7 @@ const auth = async (req, res, next) => {
 
     req.user = user;
     req.token = token;
+    req.tokenRememberMe = decoded.rememberMe;
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Authentication failed' });

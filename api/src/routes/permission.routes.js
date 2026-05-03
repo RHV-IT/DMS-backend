@@ -8,6 +8,8 @@ router.use(auth);
 
 router.get('/my', permissionController.getUserPermissions);
 
+router.get('/my-sent', permissionController.getSentShares);
+
 router.get('/file/:fileId', permissionController.getFilePermissions);
 
 router.post(

@@ -24,6 +24,9 @@ const permissionController = {
       if (!user) {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
+      if (user.status !== 'active') {
+        return res.status(400).json({ success: false, message: 'Cannot share with suspended or deleted users' });
+      }
 
       const existing = await Permission.findOne({
         fileId: file._id,
@@ -46,6 +49,14 @@ const permissionController = {
         userId,
         message: `You have been granted ${access} access to file "${file.name}"`,
         type: 'file_shared',
+        resourceId: file.fileId,
+        sharedBy: req.user._id
+      });
+
+      await Notification.create({
+        userId: req.user._id,
+        message: `You successfully shared "${file.name}" with ${user.email}`,
+        type: 'system',
         resourceId: file.fileId
       });
 
@@ -55,7 +66,11 @@ const permissionController = {
         action: 'permission_grant',
         resource: 'permission',
         resourceId: file.fileId,
-        details: { grantedTo: user.email, access }
+        details: { 
+          grantedTo: user.email, 
+          access,
+          fileName: file.name
+        }
       });
 
       res.json({ success: true, message: 'Permission granted successfully' });
@@ -115,7 +130,8 @@ const permissionController = {
       }
 
       const permissions = await Permission.find({ fileId: file._id })
-        .populate('userId', 'name email');
+        .populate('userId', 'name email')
+        .populate('grantedBy', 'name email');
 
       res.json({ success: true, data: permissions });
     } catch (error) {
@@ -128,9 +144,57 @@ const permissionController = {
       const permissions = await Permission.find({ 
         userId: req.user._id, 
         isRevoked: false 
-      }).populate('fileId');
+      })
+        .populate('fileId')
+        .populate('grantedBy', 'name email');
 
       res.json({ success: true, data: permissions });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  getSentShares: async (req, res, next) => {
+    try {
+      const { page = 1, limit = 20 } = req.query;
+
+      const permissions = await Permission.find({ 
+        grantedBy: req.user._id,
+        isRevoked: false
+      })
+        .populate('fileId')
+        .populate('userId', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+
+      const total = await Permission.countDocuments({ 
+        grantedBy: req.user._id,
+        isRevoked: false
+      });
+
+      const formatted = permissions.map(p => ({
+        _id: p._id,
+        fileId: p.fileId,
+        userId: p.userId,
+        access: p.access,
+        createdAt: p.createdAt,
+        file: {
+          fileId: p.fileId.fileId,
+          name: p.fileId.name,
+          alias: p.fileId.alias,
+          type: p.fileId.type,
+          size: p.fileId.size
+        }
+      }));
+
+      res.json({
+        success: true,
+        data: formatted,
+        totalPages: Math.ceil(total / limit),
+        currentPage: parseInt(page),
+        total
+      });
     } catch (error) {
       next(error);
     }
@@ -148,13 +212,19 @@ const permissionController = {
       }
 
       const user = await User.findById(userId);
-      const targetUserDept = user?.department;
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      if (user.status !== 'active') {
+        return res.status(400).json({ success: false, message: 'Cannot share with suspended or deleted users' });
+      }
+
+      const targetUserDept = user.department;
       const currentUserDept = req.user.department;
 
       if (targetUserDept !== currentUserDept && req.user.role !== 'admin') {
-        return res.status(403).json({ 
-          success: false, 
-          message: 'HOD can only override within their department' 
+        return res.status(403).json({
+          message: 'HOD can only override within their department'
         });
       }
 
@@ -178,13 +248,33 @@ const permissionController = {
         });
       }
 
+      await Notification.create({
+        userId,
+        message: `You have been granted ${access} access to file "${file.name}" by HOD ${req.user.name}`,
+        type: 'file_shared',
+        resourceId: file.fileId,
+        sharedBy: req.user._id
+      });
+
+      await Notification.create({
+        userId: req.user._id,
+        message: `You (as HOD) shared "${file.name}" with ${user.email}`,
+        type: 'system',
+        resourceId: file.fileId
+      });
+
       await AuditLog.create({
         userId: req.user._id,
         userEmail: req.user.email,
         action: 'permission_grant',
         resource: 'permission',
         resourceId: file.fileId,
-        details: { action: 'hod_override', access }
+        details: { 
+          action: 'hod_override', 
+          access,
+          fileName: file.name,
+          grantedTo: user.email
+        }
       });
 
       res.json({ success: true, message: 'HOD override applied' });

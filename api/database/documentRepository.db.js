@@ -4,8 +4,8 @@ require("dotenv").config();
 let database;
 
 const connect = async () => {
-  const client = await MongoClient.connect(process.env.uri);
-  database = client.db(process.env.dbName);
+  const client = await MongoClient.connect(process.env.MONGODB_URI);
+  database = client.db("dms");
 };
 
 const getDb = () => {

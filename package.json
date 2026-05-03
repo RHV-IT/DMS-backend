@@ -1,12 +1,22 @@
 {
   "name": "dms-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Enterprise Document Management System Backend",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "seed": "cd api && node src/utils/seed.js",
+    "install:all": "cd api && npm install && cd ../watcher && npm install",
+    "postinstall": "echo Dependencies already installed from api folder",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "dms",
+    "document-management",
+    "express",
+    "mongodb"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs"

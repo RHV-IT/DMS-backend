@@ -1,0 +1,77 @@
+SCANNER AGENT - QUICK START
+===========================
+
+STEP 1: DOWNLOAD
+----------------
+Open browser → Go to:
+http://192.168.4.213:5000
+Login → Click "Download Scanner Agent"
+Save file as: scanner-setup.bat
+
+OR direct link:
+http://192.168.4.213:5000/api/v1/scanner/auto-install-download
+
+---
+
+STEP 2: INSTALL
+---------------
+1. Double-click scanner-setup.bat
+2. Enter the Server URL (or press Enter for default)
+3. Wait for "Setup Complete!"
+4. Press any key to exit
+
+---
+
+STEP 3: AUTHENTICATE
+--------------------
+Option A (Recommended): Log in to the DMS web interface. The frontend
+will automatically send your authentication token to the agent.
+
+Option B (Manual): Use the set-token utility
+  npm run set-token -- --token <TOKEN> --userId <ID> --userEmail <EMAIL>
+  or: node set-token.js --token <TOKEN> --userId <ID> --userEmail <EMAIL>
+
+Verify: Open http://localhost:4001/status in your browser.
+You should see: "hasToken": true
+
+---
+
+STEP 4: START THE AGENT
+-----------------------
+Double-click agent.bat
+Leave the window open (minimize it to system tray)
+
+---
+
+STEP 5: AUTO-START (Optional)
+------------------------------
+When agent.bat starts, type Y and Enter when prompted:
+"Install to Windows startup? (Y/N)"
+
+Or manually: copy agent.bat to your Windows startup folder
+(Win+R → shell:startup → Enter)
+
+---
+
+WHERE TO SCAN
+-------------
+Save scanned files to:
+C:\Users\[YourName]\Documents\Scan
+
+The agent watches this folder and uploads files automatically.
+Supported formats: PDF, JPG, PNG, TIFF, BMP, DOC, DOCX
+Max file size: 100 MB
+
+---
+
+TROUBLESHOOTING
+---------------
+- Not uploading? Check http://localhost:4001/status - must show authenticated
+- Make sure agent.bat is running (look for command window in system tray)
+- Check scanner.log for detailed error messages
+- Port 4001 in use? Restart computer or edit scanner-agent.js to change port
+
+---
+
+Log file: scanner.log (in the agent folder)
+Need help? Contact IT support.

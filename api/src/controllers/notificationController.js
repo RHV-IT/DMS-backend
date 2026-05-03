@@ -11,6 +11,7 @@ const notificationController = {
       }
 
       const notifications = await Notification.find(query)
+        .populate('sharedBy', 'name email')
         .sort({ createdAt: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit);

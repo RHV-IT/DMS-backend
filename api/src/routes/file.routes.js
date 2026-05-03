@@ -8,6 +8,8 @@ router.use(auth);
 
 router.get('/', fileController.getAllFiles);
 
+router.get('/archive', fileController.getArchiveFiles);
+
 router.get('/deleted', fileController.getDeletedFiles);
 
 router.post('/clean-expired', fileController.cleanExpiredFiles);
@@ -25,6 +27,9 @@ router.get('/:fileId', fileController.getFile);
 router.get('/:fileId/download', fileController.downloadFile);
 
 router.get('/:fileId/preview', fileController.previewFile);
+
+// Google Docs viewer wrapper (like WhatsApp Web)
+router.get('/:fileId/preview/google', fileController.previewFileWithGoogleDocs);
 
 router.put('/:fileId', handleUpload, fileController.updateFile);
 

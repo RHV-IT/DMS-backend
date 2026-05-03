@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const { validationResult } = require('express-validator');
+const { sendWelcomeEmail } = require('../services/emailService');
 
 const userController = {
   getAllUsers: async (req, res, next) => {
@@ -67,18 +68,12 @@ const userController = {
         return res.status(400).json({ success: false, errors: errors.array() });
       }
 
-      const { name, email, password, department, role } = req.body;
+      const { name, email, password, department, role, confidentialityLevel } = req.body;
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
         return res.status(400).json({ success: false, message: 'Email already registered' });
       }
-
-      const confidentialityLevels = role === 'admin' 
-        ? ['public', 'internal', 'confidential', 'highly_confidential']
-        : role === 'hod'
-          ? ['public', 'internal', 'confidential']
-          : ['public', 'internal'];
 
       const user = await User.create({
         name,
@@ -86,12 +81,18 @@ const userController = {
         password,
         department,
         role: role || 'user',
-        confidentialityLevels,
+        confidentialityLevel: confidentialityLevel || 'public',
         passwordLastChanged: new Date()
       });
 
       await user.addToPasswordHistory();
       await user.save();
+
+      await sendWelcomeEmail({
+        name: user.name,
+        email: user.email,
+        password: password
+      });
 
       await AuditLog.create({
         userId: req.user._id,
@@ -110,7 +111,8 @@ const userController = {
           name: user.name,
           email: user.email,
           role: user.role,
-          department: user.department
+          department: user.department,
+          confidentialityLevel: user.confidentialityLevel
         }
       });
     } catch (error) {
@@ -120,20 +122,21 @@ const userController = {
 
   updateUser: async (req, res, next) => {
     try {
-      const { name, email, department, role, status } = req.body;
-      
+      const { name, email, department, role, status, confidentialityLevel } = req.body;
+
       const user = await User.findById(req.params.id);
       if (!user) {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
 
-      const oldData = { role: user.role, status: user.status };
+      const oldData = { role: user.role, status: user.status, confidentialityLevel: user.confidentialityLevel };
 
       if (name) user.name = name;
       if (email) user.email = email;
       if (department) user.department = department;
       if (role) user.role = role;
       if (status) user.status = status;
+      if (confidentialityLevel) user.confidentialityLevel = confidentialityLevel;
       user.updatedAt = new Date();
 
       await user.save();
@@ -144,7 +147,7 @@ const userController = {
         action: 'user_update',
         resource: 'user',
         resourceId: user._id.toString(),
-        details: { oldData, newData: { role, status } },
+        details: { oldData, newData: { role, status, confidentialityLevel } },
         ipAddress: req.ip
       });
 

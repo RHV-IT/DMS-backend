@@ -1,0 +1,170 @@
+/* Scanner-specific styles for the frontend */
+
+.scanner-badge {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  margin-left: 0.5rem;
+  box-shadow: 0 1px 2px rgba(16, 185, 129, 0.3);
+}
+
+.scanner-badge:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+}
+
+.scanner-badge .badge-text {
+  line-height: 1;
+}
+
+/* File row styling for scanner files */
+.file-row--scanner {
+  background: linear-gradient(90deg, #f0fdf4 0%, #ffffff 100%);
+  border-left: 3px solid #10b981;
+}
+
+.file-row--scanner:hover {
+  background: linear-gradient(90deg, #dcfce7 0%, #f9fafb 100%);
+}
+
+/* Scanner column in file table */
+.scanner-icon {
+  color: #10b981;
+  font-size: 1.25rem;
+  margin-right: 0.5rem;
+}
+
+/* File type icon styling */
+.file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  font-size: 1.25rem;
+  margin-right: 0.75rem;
+}
+
+.file-icon--pdf {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.file-icon--image {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.file-icon--document {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+/* Scanner filter button */
+.filter-scanner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-scanner-btn:hover {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
+.filter-scanner-btn.active {
+  background: #10b981;
+  color: white;
+  border-color: #10b981;
+}
+
+.filter-scanner-btn .count {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Scanner stats card */
+.scanner-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.stat-card--scanner {
+  border-left: 4px solid #10b981;
+}
+
+.stat-card__label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.stat-card__value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.stat-card--scanner .stat-card__value {
+  color: #10b981;
+}
+
+/* Empty state for scanner files */
+.empty-scanner-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: #6b7280;
+}
+
+.empty-scanner-state .icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.empty-scanner-state h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #374151;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .scanner-badge {
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+  }
+  
+  .file-row--scanner {
+    background: #f9fafb;
+  }
+}

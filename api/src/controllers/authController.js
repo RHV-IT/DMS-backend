@@ -2,6 +2,7 @@ const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const authService = require('../services/authService');
 const { validationResult } = require('express-validator');
+const { createAuditLog } = require('../middlewares/auditMiddleware');
 
 const authController = {
   register: async (req, res, next) => {
@@ -77,7 +78,7 @@ const authController = {
         return res.status(400).json({ success: false, errors: errors.array() });
       }
 
-      const { email, password } = req.body;
+      const { email, password, rememberMe } = req.body;
 
       const user = await User.findOne({ email });
       if (!user) {
@@ -90,7 +91,7 @@ const authController = {
           userEmail: user.email,
           action: 'login',
           resource: 'auth',
-          details: { method: 'password', success: false, reason: 'account_deleted' },
+          details: { method: 'password', success: false, reason: 'account_deleted', rememberMe },
           ipAddress: req.ip,
           userAgent: req.get('user-agent')
         });
@@ -106,7 +107,7 @@ const authController = {
           userEmail: user.email,
           action: 'login',
           resource: 'auth',
-          details: { method: 'password', success: false, reason: 'account_suspended' },
+          details: { method: 'password', success: false, reason: 'account_suspended', rememberMe },
           ipAddress: req.ip,
           userAgent: req.get('user-agent')
         });
@@ -123,30 +124,27 @@ const authController = {
           userEmail: user.email,
           action: 'login',
           resource: 'auth',
-          details: { method: 'password', success: false },
+          details: { method: 'password', success: false, rememberMe },
           ipAddress: req.ip,
           userAgent: req.get('user-agent')
         });
         return res.status(401).json({ success: false, message: 'Invalid email or password' });
       }
 
-      const accessToken = authService.generateAccessToken(user);
+      const accessToken = authService.generateAccessToken(user, rememberMe);
       const refreshToken = authService.generateRefreshToken(user);
 
       user.refreshToken = refreshToken;
+      user.loginCount = (user.loginCount || 0) + 1;
+      user.rememberMe = rememberMe;
       await user.save();
 
       const passwordExpired = await authService.checkPasswordExpiry(user);
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'login',
-        resource: 'auth',
-        details: { method: 'password', success: true },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      await createAuditLog(req, user, 'login', 'auth', null, { method: 'password', success: true, rememberMe });
+
+      const cookieConfig = authService.getCookieConfig(rememberMe);
+      res.cookie('token', accessToken, cookieConfig);
 
       res.json({
         success: true,
@@ -157,10 +155,12 @@ const authController = {
             email: user.email,
             role: user.role,
             department: user.department,
+            loginCount: user.loginCount,
             passwordExpired
           },
           accessToken,
-          refreshToken
+          refreshToken,
+          rememberMe
         }
       });
     } catch (error) {
@@ -170,9 +170,21 @@ const authController = {
 
   logout: async (req, res, next) => {
     try {
-      await authService.logout(req.user._id, req.ip, req.get('user-agent'));
+      const isProduction = process.env.NODE_ENV === 'production';
       
-      res.json({ success: true, message: 'Logged out successfully' });
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/'
+      });
+
+      if (req.user) {
+        await createAuditLog(req, req.user, 'logout', 'auth', null, { method: 'logout' });
+        await authService.logout(req.user._id, req.ip, req.get('user-agent'));
+      }
+      
+      return res.json({ success: true, message: 'Logged out successfully' });
     } catch (error) {
       next(error);
     }

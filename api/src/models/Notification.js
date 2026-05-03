@@ -18,6 +18,10 @@ const notificationSchema = new mongoose.Schema({
   resourceId: {
     type: String
   },
+  sharedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   isRead: {
     type: Boolean,
     default: false

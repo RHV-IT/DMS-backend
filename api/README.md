@@ -273,9 +273,10 @@ The frontend should:
 | `/api/v1/files/scan/bulk` | POST | Bulk scan upload (max 20) |
 | `/api/v1/files/deleted` | GET | Get recycle bin files |
 | `/api/v1/files/:fileId` | GET | Get file metadata |
-| `/api/v1/files/:fileId/download` | GET | Download file |
-| `/api/v1/files/:fileId/preview` | GET | Preview file |
-| `/api/v1/files/:fileId` | PUT | Update file (new version) |
+ | `/api/v1/files/:fileId/download` | GET | Download file |
+ | `/api/v1/files/:fileId/preview` | GET | Preview file (direct stream) |
+ | `/api/v1/files/:fileId/preview/google` | GET | Preview with Google Docs viewer |
+ | `/api/v1/files/:fileId` | PUT | Update file (new version) |
 | `/api/v1/files/:fileId` | DELETE | Soft delete file |
 | `/api/v1/files/:fileId/permanent-delete` | POST | Permanent delete (admin) |
 | `/api/v1/files/:fileId/restore` | POST | Restore from recycle bin |

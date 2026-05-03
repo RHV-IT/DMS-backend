@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner Agent Download</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .step {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            border-radius: 0 8px 8px 0;
+        }
+        .step-number {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+        .step-text {
+            color: #444;
+            line-height: 1.6;
+        }
+        .download-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            padding: 16px 40px;
+            border-radius: 50px;
+            font-weight: bold;
+            font-size: 18px;
+            margin: 20px 0;
+            transition: transform 0.2s, box-shadow 0.2s;
+            text-align: center;
+        }
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        .note {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 12px 15px;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+        .note strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .troubleshooting {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        .troubleshooting h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .troubleshooting ul {
+            list-style: none;
+        }
+        .troubleshooting li {
+            padding: 8px 0;
+            color: #555;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .troubleshooting li:last-child {
+            border-bottom: none;
+        }
+        code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            color: #c7254e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📄 Scanner Agent Download</h1>
+        <p class="subtitle">Easy setup to automatically upload scanned documents</p>
+
+        <div class="step">
+            <div class="step-number">Step 1: Download</div>
+            <div class="step-text">
+                Click the button below to download the setup file:
+            </div>
+            <a href="/api/v1/scanner/auto-install-download" class="download-btn" download>
+                ⬇️ Download Scanner Setup
+            </a>
+            <div class="step-text">
+                <small>File: <code>scanner-setup.bat</code></small>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">Step 2: Install</div>
+            <div class="step-text">
+                1. Double-click the downloaded <code>scanner-setup.bat</code> file<br>
+                2. Enter the server URL (or press Enter for default)<br>
+                3. Wait for "Setup Complete!" message<br>
+                4. Press any key to exit
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">Step 3: Authenticate</div>
+            <div class="step-text">
+                <strong>Option A (Recommended):</strong><br>
+                Log in to the DMS web interface. The frontend will automatically
+                send your authentication token to the agent.<br><br>
+
+                <strong>Option B (Manual):</strong><br>
+                Run the set-token command:
+                <br><code>npm run set-token -- --token &lt;YOUR_TOKEN&gt; --userId &lt;USER_ID&gt; --userEmail &lt;EMAIL&gt;</code>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">Step 4: Start Scanner</div>
+            <div class="step-text">
+                1. Find <code>agent.bat</code> in the same folder<br>
+                2. Double-click to run it<br>
+                3. A command window will open showing "Watching for scans..."<br>
+                4. <strong>Leave it running</strong> (minimize if you want)
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">Step 5: Auto-Start (Optional)</div>
+            <div class="step-text">
+                When you first run <code>agent.bat</code>, it will ask: "Install to Windows startup? (Y/N)"<br>
+                Type <strong>Y</strong> and press Enter.<br><br>
+                The scanner will now start automatically every time you log into Windows.
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">Step 6: Use It!</div>
+            <div class="step-text">
+                Save your scanned files to:
+                <br><br>
+                <center>
+                <code>C:\Users\[YourName]\Documents\Scan</code>
+                </center><br>
+                The scanner will automatically detect and upload them to the system.
+                <br><br>
+                <strong>Supported formats:</strong> PDF, JPG, PNG, TIFF, BMP, DOC, DOCX<br>
+                <strong>Max file size:</strong> 100 MB
+            </div>
+        </div>
+
+        <div class="note">
+            <strong>⚠️ Windows Security Warning</strong>
+            If Windows shows a security warning, click "More info" → "Run anyway".
+            This file is safe - it's your company's document scanning tool.
+        </div>
+
+        <div class="troubleshooting">
+            <h3>🔧 Troubleshooting</h3>
+            <ul>
+                <li><strong>"No token set":</strong> Authenticate via the web frontend or use <code>npm run set-token</code> to provide a token manually.</li>
+                <li><strong>Not uploading:</strong> Make sure <code>agent.bat</code> is running. Check for the command window in your taskbar. Verify token at <a href="http://localhost:4001/status" target="_blank">http://localhost:4001/status</a>.</li>
+                <li><strong>Auto-start not working:</strong> Press Win+R, type <code>shell:startup</code>, press Enter. Copy <code>agent.bat</code> to that folder.</li>
+                <li><strong>Error logs:</strong> Check the <code>scanner.log</code> file in the agent folder.</li>
+            </ul>
+        </div>
+
+        <div class="note">
+            <strong>Need Help?</strong><br>
+            Contact IT Support with:<br>
+            - Your computer name<br>
+            - Error message from scanner.log<br>
+            - Screenshot of the agent window
+        </div>
+    </div>
+</body>
+</html>

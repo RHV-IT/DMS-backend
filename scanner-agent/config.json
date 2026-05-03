@@ -1,0 +1,8 @@
+{
+  "apiBaseUrl": "http://192.168.5.25:5000",
+  "token": null,
+  "userId": null,
+  "userEmail": null,
+  "userName": null,
+  "configuredAt": null
+}

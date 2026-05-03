@@ -17,7 +17,7 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true,
-    minlength: 8
+    minlength: 3
   },
   role: {
     type: String,
@@ -38,10 +38,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  confidentialityLevels: [{
+  confidentialityLevel: {
     type: String,
-    enum: ['public', 'internal', 'confidential', 'highly_confidential']
-  }],
+    enum: ['public', 'internal', 'confidential', 'highly_confidential'],
+    default: 'public'
+  },
   passwordHistory: [{
     password: String,
     changedAt: Date
@@ -49,6 +50,10 @@ const userSchema = new mongoose.Schema({
   passwordLastChanged: {
     type: Date,
     default: Date.now
+  },
+  loginCount: {
+    type: Number,
+    default: 0
   },
   refreshToken: String,
   createdAt: {

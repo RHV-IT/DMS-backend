@@ -3,17 +3,19 @@ const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 
 class AuthService {
-  generateAccessToken(user) {
+  generateAccessToken(user, rememberMe = false) {
+    const expiresIn = rememberMe ? '7d' : '2h';
     return jwt.sign(
       {
         id: user._id,
         email: user.email,
         name: user.name,
         role: user.role,
-        department: user.department
+        department: user.department,
+        rememberMe
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE || '15m' }
+      { expiresIn }
     );
   }
 
@@ -23,6 +25,20 @@ class AuthService {
       process.env.JWT_REFRESH_SECRET,
       { expiresIn: process.env.JWT_REFRESH_EXPIRE || '7d' }
     );
+  }
+
+  getCookieConfig(rememberMe = false) {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const maxAge = rememberMe 
+      ? 7 * 24 * 60 * 60 * 1000  // 7 days
+      : 2 * 60 * 60 * 1000;       // 2 hours
+
+    return {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge
+    };
   }
 
   async verifyAccessToken(token) {
@@ -58,14 +74,6 @@ class AuthService {
 
   async logout(userId, ipAddress, userAgent) {
     await User.findByIdAndUpdate(userId, { refreshToken: null });
-    
-    await AuditLog.create({
-      userId,
-      userEmail: (await User.findById(userId))?.email,
-      action: 'logout',
-      ipAddress,
-      userAgent
-    });
   }
 
   async checkPasswordExpiry(user) {

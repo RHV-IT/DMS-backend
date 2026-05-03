@@ -2,11 +2,11 @@ const User = require("../models/user.model");
 const Uploads = require("../models/uploads.model");
 
 const get = (req, res) => {
-  if (req.session.user) {
+  if (req.session && req.session.user) {
     res.redirect("/dashboard");
     return;
   }
-  res.redirect("/login");
+  res.redirect("/api/login");
 };
 
 const getLogin = (req, res) => {

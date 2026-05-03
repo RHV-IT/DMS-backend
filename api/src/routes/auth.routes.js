@@ -9,7 +9,7 @@ router.post(
   [
     body('name').notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
-    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+    body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters'),
     body('department').notEmpty().withMessage('Department is required')
   ],
   authController.register
@@ -34,13 +34,20 @@ router.post(
   '/change-password',
   [
     body('currentPassword').notEmpty().withMessage('Current password is required'),
-    body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters')
+    body('newPassword').isLength({ min: 3 }).withMessage('New password must be at least 3 characters')
   ],
   authController.changePassword
 );
 
 router.get('/profile', authController.getProfile);
 
+router.get('/me', authController.getProfile);
+
 router.put('/profile', authController.updateProfile);
+
+// Track login for scanner agent (optional, graceful handling)
+router.post('/track-login', (req, res) => {
+  res.status(200).json({ success: true, message: 'Login tracked' });
+});
 
 module.exports = router;

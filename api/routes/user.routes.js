@@ -9,6 +9,8 @@ router.get("/api/download/:id", userController.downloadFile);
 
 router.get("/api/view/:id", userController.viewFile);
 
+router.get("/api/v1/files/:fileId/preview", userController.previewFile);
+
 router.get("/api/delete/:id", userController.deleteFile);
 
 router.get("/api/archive", userController.getArchive);

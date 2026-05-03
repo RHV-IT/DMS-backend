@@ -17,8 +17,8 @@ const validateDepartment = (department) => {
 };
 
 const validateConfidentialityLevel = (level) => {
-  const validLevels = ['public', 'internal', 'confidential', 'highly_confidential'];
-  return validLevels.includes(level);
+  // Accept any string for confidentiality level name
+  return typeof level === 'string';
 };
 
 const validateFileAccess = (access) => {

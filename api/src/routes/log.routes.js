@@ -14,4 +14,10 @@ router.get('/export', roleMiddleware('admin'), auditLogController.exportLogs);
 
 router.get('/stats', roleMiddleware('admin'), auditLogController.getLogStats);
 
+router.get('/actions', roleMiddleware('admin', 'hod'), auditLogController.getActions);
+
+router.get('/ip/:ip', roleMiddleware('admin'), auditLogController.getLogsByIp);
+
+router.get('/device/:deviceId', roleMiddleware('admin'), auditLogController.getLogsByDevice);
+
 module.exports = router;

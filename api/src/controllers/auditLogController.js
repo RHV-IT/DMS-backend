@@ -141,6 +141,80 @@ const auditLogController = {
     } catch (error) {
       next(error);
     }
+  },
+
+  getActions: async (req, res, next) => {
+    try {
+      const actions = await AuditLog.distinct('action');
+      const actionCounts = await AuditLog.aggregate([
+        { $group: { _id: '$action', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          actions,
+          actionCounts
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  getLogsByIp: async (req, res, next) => {
+    try {
+      const { ip } = req.params;
+      const { page = 1, limit = 50 } = req.query;
+
+      const logs = await AuditLog.find({ ipAddress: ip })
+        .populate('userId', 'name email')
+        .sort({ timestamp: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+
+      const total = await AuditLog.countDocuments({ ipAddress: ip });
+
+      res.json({
+        success: true,
+        data: {
+          logs,
+          totalPages: Math.ceil(total / limit),
+          currentPage: parseInt(page),
+          total
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  getLogsByDevice: async (req, res, next) => {
+    try {
+      const { deviceId } = req.params;
+      const { page = 1, limit = 50 } = req.query;
+
+      const logs = await AuditLog.find({ 'device.deviceName': deviceId })
+        .populate('userId', 'name email')
+        .sort({ timestamp: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+
+      const total = await AuditLog.countDocuments({ 'device.deviceName': deviceId });
+
+      res.json({
+        success: true,
+        data: {
+          logs,
+          totalPages: Math.ceil(total / limit),
+          currentPage: parseInt(page),
+          total
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
   }
 };
 
