@@ -8,7 +8,7 @@ require('dotenv').config();
 
 // Configuration
 const SCAN_DIR = process.env.SCAN_DIR || 'C:/Users/user/Documents/Scan';
-const PENDING_API_URL = process.env.PENDING_API_URL || 'http://localhost:5000/api/v1/scanner/pending';
+const PENDING_API_URL = process.env.PENDING_API_URL || 'https://rhv-dms-backend.vercel.app/api/v1/scanner/pending';
 const SCANNER_TOKEN = process.env.SCANNER_TOKEN;
 const UPLOAD_DELAY_MS = parseInt(process.env.UPLOAD_DELAY_MS) || 2000; // Fixed 2-second delay
 
