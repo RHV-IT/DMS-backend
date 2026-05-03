@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+// const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -66,18 +67,18 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, 12);
   this.updatedAt = new Date();
   next();
 });
 
-userSchema.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-userSchema.methods.isPasswordUsedBefore = async function(newPassword) {
+userSchema.methods.isPasswordUsedBefore = async function (newPassword) {
   const history = this.passwordHistory || [];
   for (const entry of history) {
     if (await bcrypt.compare(newPassword, entry.password)) {
@@ -87,7 +88,7 @@ userSchema.methods.isPasswordUsedBefore = async function(newPassword) {
   return false;
 };
 
-userSchema.methods.addToPasswordHistory = async function() {
+userSchema.methods.addToPasswordHistory = async function () {
   const historyLimit = parseInt(process.env.PASSWORD_HISTORY_LIMIT) || 5;
   let history = this.passwordHistory || [];
   history.unshift({

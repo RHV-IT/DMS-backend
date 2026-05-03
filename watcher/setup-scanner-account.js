@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+// const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 require('dotenv').config();
@@ -38,12 +39,12 @@ const setupScannerAccount = async () => {
 
     // Check if scanner account already exists
     let scannerUser = await User.findOne({ email: 'scanner@dms.local' });
-    
+
     if (scannerUser) {
       console.log('Scanner account already exists');
       console.log(`User ID: ${scannerUser._id}`);
       console.log(`Status: ${scannerUser.status}`);
-      
+
       // Generate new token
       const token = jwt.sign(
         {
@@ -57,20 +58,20 @@ const setupScannerAccount = async () => {
         JWT_SECRET,
         { expiresIn: '365d' }
       );
-      
+
       console.log('\n=== Scanner Token ===');
       console.log(token);
       console.log('====================\n');
-      
+
       console.log('Add this to watcher/.env:');
       console.log(`SCANNER_TOKEN=${token}\n`);
-      
+
     } else {
       // Create scanner service account
       console.log('Creating scanner service account...');
-      
+
       const hashedPassword = await bcrypt.hash('ScannerService2024!', 12);
-      
+
       scannerUser = await User.create({
         name: 'Scanner Service',
         email: 'scanner@dms.local',
@@ -80,12 +81,12 @@ const setupScannerAccount = async () => {
         status: 'active',
         confidentialityLevels: ['public', 'internal']
       });
-      
+
       console.log('Scanner account created!');
       console.log(`User ID: ${scannerUser._id}`);
       console.log(`Email: ${scannerUser.email}`);
       console.log(`Role: ${scannerUser.role}`);
-      
+
       // Generate token
       const token = jwt.sign(
         {
@@ -99,11 +100,11 @@ const setupScannerAccount = async () => {
         JWT_SECRET,
         { expiresIn: '365d' }
       );
-      
+
       console.log('\n=== Scanner Token ===');
       console.log(token);
       console.log('====================\n');
-      
+
       console.log('Add this to watcher/.env:');
       console.log(`SCANNER_TOKEN=${token}\n`);
     }
@@ -113,10 +114,10 @@ const setupScannerAccount = async () => {
     console.log('1. Ensure SCANNER_TOKEN is set in watcher/.env');
     console.log('2. Start the watcher: cd watcher && npm start');
     console.log('3. Place scanned files in C:/Users/user/Documents/Scan');
-    
+
     await mongoose.disconnect();
     console.log('\nDisconnected from MongoDB');
-    
+
   } catch (error) {
     console.error('Error:', error.message);
     if (error.name === 'MongoServerSelectionError') {
