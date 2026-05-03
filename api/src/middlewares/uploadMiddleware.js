@@ -1,12 +1,24 @@
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 
 const maxFileSize = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, process.env.UPLOAD_PATH || './uploads');
+    try {
+      const uploadPath = process.env.UPLOAD_PATH || path.join(os.tmpdir(), 'uploads');
+      // Ensure directory exists
+      if (!fs.existsSync(uploadPath)) {
+        fs.mkdirSync(uploadPath, { recursive: true });
+      }
+      cb(null, uploadPath);
+    } catch (error) {
+      console.warn('Could not create upload directory:', error.message);
+      cb(error);
+    }
   },
   filename: (req, file, cb) => {
     const uniqueId = uuidv4();

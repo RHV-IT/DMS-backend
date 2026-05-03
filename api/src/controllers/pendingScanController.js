@@ -6,11 +6,12 @@ const Permission = require('../models/Permission');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const FileConverter = require('../utils/fileConverter');
 const { v4: uuidv4 } = require('uuid');
 
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
-const UPLOAD_PATH = process.env.UPLOAD_PATH || './uploads';
+const UPLOAD_PATH = process.env.UPLOAD_PATH || path.join(os.tmpdir(), 'uploads');
 
 /**
  * Generate a stable file fingerprint for deduplication
@@ -34,8 +35,13 @@ function generateFileFingerprint(filePath, fileName, fileSize, machineId) {
 }
 
 // Ensure upload directory exists
-if (!fs.existsSync(UPLOAD_PATH)) {
-  fs.mkdirSync(UPLOAD_PATH, { recursive: true });
+try {
+  if (!fs.existsSync(UPLOAD_PATH)) {
+    fs.mkdirSync(UPLOAD_PATH, { recursive: true });
+  }
+} catch (error) {
+  console.warn('Could not create upload directory:', error.message);
+  // Continue execution - directory might already exist or be accessible
 }
 
 const scannerController = {

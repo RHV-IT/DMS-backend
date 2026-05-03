@@ -7,6 +7,9 @@ const AuditLog = require('../models/AuditLog');
 const { canUserAccessFile, canUserAccessFileContents, canUserManageFile, filterAccessibleFiles } = require('../utils/accessControl');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+
+const UPLOAD_PATH = process.env.UPLOAD_PATH || path.join(os.tmpdir(), 'uploads');
 
 // Confidentiality level hierarchy (higher index = higher level)
 const CONFIDENTIALITY_LEVELS = ['public', 'internal', 'confidential', 'highly_confidential'];
@@ -178,7 +181,7 @@ const fileController = {
         return res.status(403).json({ success: false, message: 'No access to file contents' });
       }
 
-      const filePath = path.join(process.env.UPLOAD_PATH || './uploads', file.storagePath);
+      const filePath = path.join(UPLOAD_PATH, file.storagePath);
       
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({ success: false, message: 'File not found on disk' });
@@ -591,7 +594,7 @@ deleteFile: async (req, res, next) => {
       }
 
       if (req.query.permanent === 'true') {
-        const filePath = path.join(process.env.UPLOAD_PATH || './uploads', file.storagePath);
+        const filePath = path.join(UPLOAD_PATH, file.storagePath);
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
         }
@@ -780,7 +783,7 @@ deleteFile: async (req, res, next) => {
         return res.status(403).json({ success: false, message: 'Only admin can permanently delete files' });
       }
 
-      const filePath = path.join(process.env.UPLOAD_PATH || './uploads', file.storagePath);
+      const filePath = path.join(UPLOAD_PATH, file.storagePath);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
@@ -817,7 +820,7 @@ deleteFile: async (req, res, next) => {
       });
 
       for (const file of expiredFiles) {
-        const filePath = path.join(process.env.UPLOAD_PATH || './uploads', file.storagePath);
+        const filePath = path.join(UPLOAD_PATH, file.storagePath);
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
         }
@@ -1034,7 +1037,7 @@ deleteFile: async (req, res, next) => {
         return res.status(403).json({ success: false, message: 'No access to file contents' });
       }
 
-      const filePath = path.join(process.env.UPLOAD_PATH || './uploads', file.storagePath);
+      const filePath = path.join(UPLOAD_PATH, file.storagePath);
       console.log('[PREVIEW] File path:', filePath);
       
       if (!fs.existsSync(filePath)) {
