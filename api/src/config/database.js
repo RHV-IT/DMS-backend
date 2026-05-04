@@ -7,7 +7,7 @@ const connectDB = async () => {
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 
   if (!mongoUri) {
-    throw new Error('MongoDB URI missing');
+    throw new Error('MONGODB_URI is missing');
   }
 
   console.log('Mongo URI exists:', !!mongoUri);
@@ -16,6 +16,7 @@ const connectDB = async () => {
   try {
     const conn = await mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
     });
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);

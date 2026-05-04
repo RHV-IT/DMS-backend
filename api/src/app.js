@@ -10,6 +10,16 @@ const connectDB = require('./config/database');
 const logger = require('./config/logger');
 const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
 const mongoose = require('mongoose');
+
+// Global error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
 const swaggerSpec = require('./utils/swagger');
 
@@ -191,9 +201,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Root route
+// Root route / health check
 app.get('/', (req, res) => {
-  res.json({ message: 'Welcome to the DMS API', docs: '/api-docs' });
+  res.json({
+    success: true,
+    message: 'DMS API running',
+    docs: '/api-docs'
+  });
 });
 
 // Favicon route
