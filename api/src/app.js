@@ -106,14 +106,20 @@ app.use((req, res, next) => {
 });
 
 // Database connection check middleware
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   if (mongoose.connection.readyState !== 1) {
-    return res.status(503).json({
-      success: false,
-      message: 'Service temporarily unavailable - database connection issue'
-    });
+    try {
+      await connectDB();
+      next();
+    } catch (err) {
+      return res.status(503).json({
+        success: false,
+        message: 'Service temporarily unavailable - database connection issue'
+      });
+    }
+  } else {
+    next();
   }
-  next();
 });
 
 // Audit log enhancement middleware
