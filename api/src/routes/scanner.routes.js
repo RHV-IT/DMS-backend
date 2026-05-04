@@ -130,8 +130,8 @@ echo =========================
 echo.
 
 REM Get server URL
-set /p SERVER_URL="Server URL (e.g. http://192.168.4.213:5000): "
-if "%SERVER_URL%"=="" set SERVER_URL=http://localhost:5000
+set /p SERVER_URL="Server URL (e.g. https://rhv-dms-backend.vercel.app): "
+if "%SERVER_URL%"=="" set SERVER_URL=https://rhv-dms-backend.vercel.app
 
 REM Build API URL
 set API_URL=%SERVER_URL%/api/v1/scanner/pending

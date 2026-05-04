@@ -216,8 +216,8 @@ const userController = {
 
   resetPassword: async (req, res, next) => {
     try {
-      if (!req.params.id) {
-        return res.status(400).json({ success: false, message: 'User ID is required' });
+      if (!req.params.id || req.params.id === 'undefined' || !require('mongoose').Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Valid user ID is required' });
       }
 
       const { newPassword } = req.body;
