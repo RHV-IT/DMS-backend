@@ -22,6 +22,22 @@ try {
   console.error('Upload directory creation failed:', err.message);
 }
 
+// Database readiness flag
+let dbConnected = false;
+
+// Initialize database connection and seeding
+(async () => {
+  try {
+    await connectDB();
+    await seedDepartments();
+    await seedSuperAdmin();
+    dbConnected = true;
+    console.log('Database ready');
+  } catch (err) {
+    console.error('Database initialization failed:', err);
+  }
+})();
+
 // Global error handlers
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -105,21 +121,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// Database connection check middleware
-app.use(async (req, res, next) => {
-  if (mongoose.connection.readyState !== 1) {
-    try {
-      await connectDB();
-      next();
-    } catch (err) {
-      return res.status(503).json({
-        success: false,
-        message: 'Service temporarily unavailable - database connection issue'
-      });
-    }
-  } else {
-    next();
+// Database readiness check middleware
+app.use((req, res, next) => {
+  if (!dbConnected) {
+    return res.status(503).json({
+      success: false,
+      message: 'Service temporarily unavailable - database initializing'
+    });
   }
+  next();
 });
 
 // Audit log enhancement middleware
@@ -272,17 +282,3 @@ module.exports = app;
 
 // Export startServer for local development
 module.exports.startServer = startServer;
-
-// Seed database for production
-if (process.env.VERCEL) {
-  (async () => {
-    try {
-      await connectDB();
-      await seedDepartments();
-      await seedSuperAdmin();
-      console.log('Database seeded successfully');
-    } catch (err) {
-      console.error('Database seeding failed:', err);
-    }
-  })();
-}
