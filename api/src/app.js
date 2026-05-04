@@ -22,21 +22,19 @@ try {
   console.error('Upload directory creation failed:', err.message);
 }
 
-// Database readiness flag
-let dbConnected = false;
-
-// Initialize database connection and seeding
-(async () => {
-  try {
-    await connectDB();
-    await seedDepartments();
-    await seedSuperAdmin();
-    dbConnected = true;
-    console.log('Database ready');
-  } catch (err) {
-    console.error('Database initialization failed:', err);
-  }
-})();
+// Initialize database connection and seeding for local development
+if (process.env.NODE_ENV !== 'production') {
+  (async () => {
+    try {
+      await connectDB();
+      await seedDepartments();
+      await seedSuperAdmin();
+      console.log('Database ready');
+    } catch (err) {
+      console.error('Database initialization failed:', err);
+    }
+  })();
+}
 
 // Global error handlers
 process.on('unhandledRejection', (reason, promise) => {
@@ -121,16 +119,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Database readiness check middleware
-app.use((req, res, next) => {
-  if (!dbConnected) {
-    return res.status(503).json({
-      success: false,
-      message: 'Service temporarily unavailable - database initializing'
-    });
-  }
-  next();
-});
+
 
 // Audit log enhancement middleware
 app.use(enhanceAuditLog);
@@ -282,3 +271,12 @@ module.exports = app;
 
 // Export startServer for local development
 module.exports.startServer = startServer;
+
+// Initialize database for production
+if (process.env.NODE_ENV === 'production') {
+  connectDB().then(() => {
+    console.log('DB connected in production');
+    seedDepartments().catch(err => console.error('Seeding departments failed:', err));
+    seedSuperAdmin().catch(err => console.error('Seeding admin failed:', err));
+  }).catch(err => console.error('DB connection failed in production:', err));
+}
