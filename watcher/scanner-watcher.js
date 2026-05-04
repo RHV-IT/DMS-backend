@@ -7,13 +7,14 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 // Configuration
-const API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
+const API_BASE_URL = process.env.API_BASE_URL || 'https://rhv-dms-backend.vercel.app';
 const SCAN_DIR = process.env.SCAN_DIR || 'C:/Users/user/Documents/Scan';
-const PENDING_API_URL = process.env.PENDING_API_URL || `${API_BASE_URL}/api/v1/scanner/pending`;
+const PENDING_API_URL = `${API_BASE_URL}/api/v1/scanner/pending`;
 const SCANNER_TOKEN = process.env.SCANNER_TOKEN;
 const UPLOAD_DELAY_MS = parseInt(process.env.UPLOAD_DELAY_MS) || 2000; // Fixed 2-second delay
 
 console.log('Backend API:', API_BASE_URL);
+console.log('Pending API:', PENDING_API_URL);
 
 // Validate required config
 if (!SCANNER_TOKEN) {

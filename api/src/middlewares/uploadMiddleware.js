@@ -6,19 +6,13 @@ const { v4: uuidv4 } = require('uuid');
 
 const maxFileSize = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 
+const uploadDir = process.env.VERCEL ? '/tmp' : path.join(process.cwd(), 'uploads');
+
+console.log('Using upload temp directory:', uploadDir);
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    try {
-      const uploadPath = path.join(process.cwd(), process.env.VERCEL ? 'tmp' : '', 'uploads');
-      // Ensure directory exists
-      if (!fs.existsSync(uploadPath)) {
-        fs.mkdirSync(uploadPath, { recursive: true });
-      }
-      cb(null, uploadPath);
-    } catch (error) {
-      console.warn('Could not create upload directory:', error.message);
-      cb(error);
-    }
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const uniqueId = uuidv4();

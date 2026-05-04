@@ -20,7 +20,7 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
 // Load API_BASE_URL from environment variables or config
-let API_BASE = process.env.API_BASE_URL || 'http://localhost:5000';
+let API_BASE = process.env.API_BASE_URL || 'https://rhv-dms-backend.vercel.app';
 if (fs.existsSync(CONFIG_PATH)) {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
@@ -379,6 +379,7 @@ function main() {
   validateDependencies();
   loadConfig();
   console.log(`[INFO] Backend API: ${API_BASE}`);
+  console.log(`[INFO] Pending API: ${API_BASE}/api/v1/scanner/pending`);
   startLocalServer();
   startWatcher();
   process.on('SIGINT', () => {

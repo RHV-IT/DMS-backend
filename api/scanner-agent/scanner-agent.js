@@ -14,13 +14,14 @@ try {
 }
 
 // Configuration
-const API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
+const API_BASE_URL = process.env.API_BASE_URL || 'https://rhv-dms-backend.vercel.app';
 const SCAN_DIR = 'C:/Users/[YourUsername]/Documents/Scan'; // Update this path
-const PENDING_API_URL = config.apiUrl || `${API_BASE_URL}/api/v1/scanner/pending`;
+const PENDING_API_URL = `${API_BASE_URL}/api/v1/scanner/pending`;
 const SCANNER_TOKEN = config.token;
 const UPLOAD_DELAY_MS = 2000;
 
 console.log('Backend API:', API_BASE_URL);
+console.log('Pending API:', PENDING_API_URL);
 
 // Validate config
 if (!SCANNER_TOKEN) {

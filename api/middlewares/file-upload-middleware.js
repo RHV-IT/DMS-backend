@@ -1,16 +1,9 @@
 const multer = require("multer");
 const path = require("path");
-const fs = require("fs");
 
-const uploadDir = path.join(process.cwd(), process.env.VERCEL ? 'tmp' : '', "uploads");
+const uploadDir = process.env.VERCEL ? '/tmp' : path.join(process.cwd(), "uploads");
 
-try {
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-} catch (err) {
-  console.error('Upload directory creation failed:', err.message);
-}
+console.log('Using upload temp directory:', uploadDir);
 
 const upload = multer({
   storage: multer.diskStorage({
