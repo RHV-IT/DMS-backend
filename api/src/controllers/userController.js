@@ -216,8 +216,12 @@ const userController = {
 
   resetPassword: async (req, res, next) => {
     try {
+      if (!req.params.id) {
+        return res.status(400).json({ success: false, message: 'User ID is required' });
+      }
+
       const { newPassword } = req.body;
-      
+
       const user = await User.findById(req.params.id);
       if (!user) {
         return res.status(404).json({ success: false, message: 'User not found' });
