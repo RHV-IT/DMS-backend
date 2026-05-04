@@ -1,0 +1,15 @@
+{
+  "name": "scanner-agent",
+  "version": "1.0.0",
+  "description": "Scanner Agent for DMS",
+  "main": "scanner-agent.js",
+  "scripts": {
+    "start": "node scanner-agent.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "form-data": "^4.0.0",
+    "chokidar": "^3.5.3",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
