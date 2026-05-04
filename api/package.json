@@ -4,9 +4,9 @@
   "description": "Enterprise Document Management System Backend",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
-    "dev": "nodemon src/app.js",
-    "seed": "node src/utils/seed.js"
+    "start": "node --no-deprecation src/app.js",
+    "dev": "nodemon --no-deprecation src/app.js",
+    "seed": "node --no-deprecation src/utils/seed.js"
   },
   "keywords": [
     "dms",

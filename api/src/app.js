@@ -211,9 +211,18 @@ const startServer = async () => {
     await connectDB();
     logger.info('Database connected');
 
-    // Run seeding on startup
-    await seedDepartments();
-    await seedSuperAdmin();
+    // Run seeding on startup (non-blocking)
+    try {
+      await seedDepartments();
+    } catch (error) {
+      console.warn('Department seeding failed:', error.message);
+    }
+
+    try {
+      await seedSuperAdmin();
+    } catch (error) {
+      console.warn('Super Admin seeding failed:', error.message);
+    }
 
     app.listen(PORT, '0.0.0.0', () => {
       logger.info(`Server running on port ${PORT}`);

@@ -41,26 +41,42 @@ const seedDepartments = async () => {
     { name: 'STORE MANAGEMENT', code: 'SM', description: 'Store Management' }
   ];
 
-  let seeded = 0;
-  let existing = 0;
+  let created = 0;
+  let updated = 0;
+  let errors = 0;
 
   for (const dept of departments) {
-    const existingDept = await Department.findOne({ code: dept.code });
-    if (existingDept) {
-      existing++;
-      continue;
+    try {
+      const result = await Department.findOneAndUpdate(
+        { name: dept.name },
+        {
+          $set: {
+            code: dept.code,
+            description: dept.description,
+            isActive: true,
+            updatedAt: new Date(),
+          },
+        },
+        {
+          upsert: true,
+          returnDocument: 'after',
+        }
+      );
+
+      if (result && result.isNew) {
+        created++;
+        console.log(`Department created: ${dept.name}`);
+      } else {
+        updated++;
+        console.log(`Department updated: ${dept.name}`);
+      }
+    } catch (error) {
+      errors++;
+      console.warn(`Failed to seed department ${dept.name}: ${error.message}`);
     }
-
-    await Department.create(dept);
-    seeded++;
   }
 
-  if (seeded > 0) {
-    console.log(`✓ ${seeded} departments seeded`);
-  }
-  if (existing > 0) {
-    console.log(`✓ ${existing} departments already exist`);
-  }
+  console.log(`Seeder completed: ${created} created, ${updated} updated, ${errors} errors`);
 };
 
 const seedSuperAdmin = async () => {
