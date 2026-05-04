@@ -38,7 +38,7 @@ const departments = [
 
 const seedDepartments = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await mongoose.connect(process.env.MONGO_URI);
     console.log('Connected to MongoDB');
 
     for (const dept of departments) {

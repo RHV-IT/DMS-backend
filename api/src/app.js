@@ -9,6 +9,7 @@ const fs = require('fs');
 const connectDB = require('./config/database');
 const logger = require('./config/logger');
 const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
+const mongoose = require('mongoose');
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
 const swaggerSpec = require('./utils/swagger');
 
@@ -80,6 +81,17 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`);
+  next();
+});
+
+// Database connection check middleware
+app.use((req, res, next) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message: 'Service temporarily unavailable - database connection issue'
+    });
+  }
   next();
 });
 
