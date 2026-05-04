@@ -272,11 +272,5 @@ module.exports = app;
 // Export startServer for local development
 module.exports.startServer = startServer;
 
-// Initialize database for production
-if (process.env.NODE_ENV === 'production') {
-  connectDB().then(() => {
-    console.log('DB connected in production');
-    seedDepartments().catch(err => console.error('Seeding departments failed:', err));
-    seedSuperAdmin().catch(err => console.error('Seeding admin failed:', err));
-  }).catch(err => console.error('DB connection failed in production:', err));
-}
+// Initialize database connection
+connectDB().catch(err => console.error('DB connection failed:', err));

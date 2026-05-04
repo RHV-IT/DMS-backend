@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
-// Disable mongoose buffering in development, enable in production for serverless
-mongoose.set('bufferCommands', process.env.NODE_ENV === 'production');
+// Enable mongoose buffering to allow queries before connection
+mongoose.set('bufferCommands', true);
 
 const connectDB = async () => {
   const mongoUri = process.env.MONGODB_URI;
