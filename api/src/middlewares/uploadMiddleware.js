@@ -9,7 +9,7 @@ const maxFileSize = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     try {
-      const uploadPath = path.join(process.cwd(), 'uploads');
+      const uploadPath = path.join(process.cwd(), process.env.VERCEL ? 'tmp' : '', 'uploads');
       // Ensure directory exists
       if (!fs.existsSync(uploadPath)) {
         fs.mkdirSync(uploadPath, { recursive: true });

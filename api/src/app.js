@@ -14,10 +14,14 @@ const path = require('path');
 const fs = require('fs');
 
 // Create uploads directory
-const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('Uploads directory created');
+const uploadsDir = path.join(process.cwd(), process.env.VERCEL ? 'tmp' : '', 'uploads');
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('Uploads directory created');
+  }
+} catch (err) {
+  console.error('Upload directory creation failed:', err.message);
 }
 
 // Global error handlers
@@ -260,8 +264,7 @@ const startServer = async () => {
   }
 };
 
-if (require.main === module && process.env.NODE_ENV !== 'production') {
-  startServer();
-}
-
 module.exports = app;
+
+// Export startServer for local development
+module.exports.startServer = startServer;
