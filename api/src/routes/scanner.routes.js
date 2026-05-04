@@ -129,9 +129,8 @@ echo Scanner Agent Installation
 echo =========================
 echo.
 
-REM Get server URL
-set /p SERVER_URL="Server URL (e.g. https://rhv-dms-backend.vercel.app): "
-if "%SERVER_URL%"=="" set SERVER_URL=https://rhv-dms-backend.vercel.app
+REM Set server URL to Vercel (no user input for security)
+set SERVER_URL=https://rhv-dms-backend.vercel.app
 
 REM Build API URL
 set API_URL=%SERVER_URL%/api/v1/scanner/pending
