@@ -10,6 +10,7 @@ const connectDB = require('./config/database');
 const logger = require('./config/logger');
 const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
 const mongoose = require('mongoose');
+const adminController = require('./controllers/adminController');
 
 // Create uploads directory
 const uploadsDir = path.join(process.cwd(), process.env.VERCEL ? 'tmp' : '', 'uploads');
@@ -170,6 +171,9 @@ app.get('/api/v1/config/confidentiality-levels', (req, res) => {
   });
 });
 
+// Admin registration endpoint (no auth required)
+app.post('/api/v1/admin/register', adminController.registerAdmin);
+
 // Serve scanner download page
 app.get('/scanner', (req, res) => {
   const filePath = path.join(__dirname, '../public/scanner-download.html');
@@ -272,5 +276,16 @@ module.exports = app;
 // Export startServer for local development
 module.exports.startServer = startServer;
 
-// Initialize database connection
-connectDB().catch(err => console.error('DB connection failed:', err));
+// Initialize database connection and seeding for production
+if (process.env.NODE_ENV === 'production') {
+  connectDB().then(async () => {
+    console.log('DB connected');
+    try {
+      await seedDepartments();
+      await seedSuperAdmin();
+      console.log('Seeding completed');
+    } catch (err) {
+      console.error('Seeding failed:', err);
+    }
+  }).catch(err => console.error('DB connection failed:', err));
+}
