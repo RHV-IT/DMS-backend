@@ -272,3 +272,17 @@ module.exports = app;
 
 // Export startServer for local development
 module.exports.startServer = startServer;
+
+// Seed database for production
+if (process.env.VERCEL) {
+  (async () => {
+    try {
+      await connectDB();
+      await seedDepartments();
+      await seedSuperAdmin();
+      console.log('Database seeded successfully');
+    } catch (err) {
+      console.error('Database seeding failed:', err);
+    }
+  })();
+}
