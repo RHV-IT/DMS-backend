@@ -1,2 +1,7 @@
 require('dotenv').config({ path: __dirname + '/api/.env' });
-module.exports = require('./api/src/app');
+const { startServer } = require('./api/src/app');
+
+if (require.main === module) {
+  // Start the server if this file is run directly
+  startServer();
+}

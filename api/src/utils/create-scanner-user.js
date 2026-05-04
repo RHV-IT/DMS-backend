@@ -17,7 +17,7 @@ require('dotenv').config();
 const createScannerAccount = async () => {
   try {
     // Connect to MongoDB
-    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/dms';
+    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
     await mongoose.connect(mongoUri);
     console.log('✓ Connected to MongoDB\n');
 

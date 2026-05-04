@@ -254,3 +254,6 @@ if (require.main === module) {
 }
 
 module.exports = app;
+
+// Export startServer for external use
+module.exports.startServer = startServer;
