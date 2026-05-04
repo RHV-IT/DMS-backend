@@ -8,6 +8,7 @@ const fs = require('fs');
 
 const connectDB = require('./config/database');
 const logger = require('./config/logger');
+const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
 const swaggerSpec = require('./utils/swagger');
 
@@ -190,6 +191,10 @@ const startServer = async () => {
   try {
     await connectDB();
     logger.info('Database connected');
+
+    // Run seeding on startup
+    await seedDepartments();
+    await seedSuperAdmin();
 
     app.listen(PORT, '0.0.0.0', () => {
       logger.info(`Server running on port ${PORT}`);

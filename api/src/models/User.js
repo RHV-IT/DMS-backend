@@ -39,11 +39,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  confidentialityLevel: {
+  confidentialityLevels: [{
     type: String,
     enum: ['public', 'internal', 'confidential', 'highly_confidential'],
-    default: 'public'
-  },
+    default: ['public']
+  }],
   passwordHistory: [{
     password: String,
     changedAt: Date
@@ -67,11 +67,10 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, 12);
   this.updatedAt = new Date();
-  next();
 });
 
 userSchema.methods.comparePassword = async function (candidatePassword) {
