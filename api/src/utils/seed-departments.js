@@ -37,16 +37,16 @@ const departments = [
 ];
 
 const seedDepartments = async () => {
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-  console.log('Mongo URI exists:', !!mongoUri);
+  const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
-    console.error('MongoDB URI missing');
+    console.error('MONGODB_URI is missing');
     process.exit(1);
   }
-  console.log('Connecting to MongoDB...');
+  console.log('Mongo URI exists');
+  console.log('Connecting to MongoDB');
   try {
     await mongoose.connect(mongoUri);
-    console.log('Connected to MongoDB');
+    console.log('MongoDB connected successfully');
 
     for (const dept of departments) {
       const existing = await Department.findOne({ code: dept.code });

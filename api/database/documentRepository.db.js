@@ -4,9 +4,9 @@ require("dotenv").config();
 let database;
 
 const connect = async () => {
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
-    throw new Error('MongoDB URI missing');
+    throw new Error('MONGODB_URI is missing');
   }
   const client = await MongoClient.connect(mongoUri);
   database = client.db("dms");

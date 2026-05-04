@@ -26,7 +26,7 @@ const User = require(path.join(apiDir, 'src', 'models', 'User'));
 const setupScannerAccount = async () => {
   try {
     // Connect to MongoDB
-    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+    const mongoUri = process.env.MONGODB_URI;
     await mongoose.connect(mongoUri);
     console.log('Connected to MongoDB\n');
 

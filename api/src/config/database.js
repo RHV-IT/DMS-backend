@@ -4,14 +4,15 @@ const mongoose = require('mongoose');
 mongoose.set('bufferCommands', false);
 
 const connectDB = async () => {
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  const mongoUri = process.env.MONGODB_URI;
 
   if (!mongoUri) {
-    throw new Error('MONGODB_URI is missing');
+    console.error('MONGODB_URI is missing');
+    process.exit(1);
   }
 
-  console.log('Mongo URI exists:', !!mongoUri);
-  console.log('Connecting to MongoDB...');
+  console.log('Mongo URI exists');
+  console.log('Connecting to MongoDB');
 
   try {
     const conn = await mongoose.connect(mongoUri, {
@@ -19,10 +20,10 @@ const connectDB = async () => {
       socketTimeoutMS: 45000,
     });
 
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    console.log('MongoDB connected successfully');
     return conn;
   } catch (error) {
-    console.error('MongoDB connection failed:', error);
+    console.error('MongoDB connection failed');
     process.exit(1);
   }
 };
