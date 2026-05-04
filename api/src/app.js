@@ -10,6 +10,15 @@ const connectDB = require('./config/database');
 const logger = require('./config/logger');
 const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
 const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
+
+// Create uploads directory
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('Uploads directory created');
+}
 
 // Global error handlers
 process.on('unhandledRejection', (reason, promise) => {
@@ -238,22 +247,21 @@ const startServer = async () => {
       console.warn('Super Admin seeding failed:', error.message);
     }
 
-    app.listen(PORT, '0.0.0.0', () => {
-      logger.info(`Server running on port ${PORT}`);
-      console.log(`Server running on http://localhost:${PORT}`);
-      console.log(`API Docs: http://localhost:${PORT}/api-docs`);
-    });
+    if (process.env.NODE_ENV !== 'production') {
+      app.listen(PORT, '0.0.0.0', () => {
+        logger.info(`Server running on port ${PORT}`);
+        console.log(`Server running on http://localhost:${PORT}`);
+        console.log(`API Docs: http://localhost:${PORT}/api-docs`);
+      });
+    }
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
   }
 };
 
-if (require.main === module) {
+if (require.main === module && process.env.NODE_ENV !== 'production') {
   startServer();
 }
 
 module.exports = app;
-
-// Export startServer for external use
-module.exports.startServer = startServer;

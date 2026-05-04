@@ -1,7 +1,8 @@
 require('dotenv').config({ path: __dirname + '/api/.env' });
-const { startServer } = require('./api/src/app');
+const app = require('./api/src/app');
 
-if (require.main === module) {
-  // Start the server if this file is run directly
-  startServer();
-}
+console.log("Mongo URI exists:", !!process.env.MONGODB_URI);
+console.log("Running on Vercel:", !!process.env.VERCEL);
+console.log("Current working directory:", process.cwd());
+
+module.exports = app;
