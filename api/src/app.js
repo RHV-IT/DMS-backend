@@ -10,8 +10,6 @@ const connectDB = require('./config/database');
 const logger = require('./config/logger');
 const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
 const mongoose = require('mongoose');
-const path = require('path');
-const fs = require('fs');
 
 // Create uploads directory
 const uploadsDir = path.join(process.cwd(), process.env.VERCEL ? 'tmp' : '', 'uploads');
