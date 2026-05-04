@@ -130,8 +130,15 @@ const seedSuperAdmin = async () => {
 };
 
 const runSeed = async () => {
+  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  console.log('Mongo URI exists:', !!mongoUri);
+  if (!mongoUri) {
+    console.error('MongoDB URI missing');
+    process.exit(1);
+  }
+  console.log('Connecting to MongoDB...');
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(mongoUri);
     console.log('Connected to MongoDB');
 
     await seedDepartments();

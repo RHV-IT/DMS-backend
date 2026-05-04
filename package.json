@@ -4,7 +4,7 @@
   "description": "Enterprise Document Management System Backend",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node --no-deprecation index.js",
     "dev": "nodemon index.js",
     "seed": "cd api && node src/utils/seed.js",
     "install:all": "cd api && npm install && cd ../watcher && npm install",

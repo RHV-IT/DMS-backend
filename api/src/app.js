@@ -181,7 +181,14 @@ app.post('/set-token', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'DMS Server is running' });
+  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  const success = dbStatus === 'connected';
+
+  res.status(success ? 200 : 503).json({
+    success,
+    database: dbStatus,
+    message: success ? 'DMS Server is running' : 'Database connection issue'
+  });
 });
 
 // Root route
