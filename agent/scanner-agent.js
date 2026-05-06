@@ -65,11 +65,18 @@ function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-      agentConfig = { ...agentConfig, ...data };
 
-      // Restore Map and Set from saved data
+      // Reconstruct Map and Set objects properly
       agentConfig.pendingUploads = new Map(data.pendingUploads || []);
       agentConfig.cancelledUploads = new Set(data.cancelledUploads || []);
+
+      // Copy other properties
+      agentConfig = {
+        ...agentConfig,
+        ...data,
+        pendingUploads: agentConfig.pendingUploads,
+        cancelledUploads: agentConfig.cancelledUploads
+      };
 
       // Generate machineId if not set
       if (!agentConfig.machineId) {
@@ -82,6 +89,10 @@ function loadConfig() {
       // Merge with config cancelled uploads
       agentConfig.cancelledUploads = new Set([...agentConfig.cancelledUploads, ...persistentCancelled]);
 
+      // Validation logging
+      console.log('cancelledUploads type:', agentConfig.cancelledUploads.constructor.name);
+      console.log('pendingUploads type:', agentConfig.pendingUploads.constructor.name);
+
       return agentConfig;
     }
   } catch (err) { log('Config load error: ' + err.message, 'ERROR'); }
@@ -92,13 +103,24 @@ function saveConfig(data) {
   try {
     const toSave = { ...agentConfig, ...data, savedAt: new Date().toISOString() };
     // Convert Map and Set to serializable format
-    toSave.pendingUploads = Array.from(toSave.pendingUploads.entries());
-    toSave.cancelledUploads = Array.from(toSave.cancelledUploads);
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(toSave, null, 2));
-    // Restore the Map and Set in memory
-    agentConfig.pendingUploads = new Map(toSave.pendingUploads);
-    agentConfig.cancelledUploads = new Set(toSave.cancelledUploads);
-    agentConfig = toSave;
+    const serializedPending = Array.from(toSave.pendingUploads.entries());
+    const serializedCancelled = Array.from(toSave.cancelledUploads);
+
+    const configToSave = {
+      ...toSave,
+      pendingUploads: serializedPending,
+      cancelledUploads: serializedCancelled
+    };
+
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(configToSave, null, 2));
+
+    // Update agentConfig with new data but keep Map and Set objects
+    agentConfig = {
+      ...toSave,
+      pendingUploads: new Map(serializedPending),
+      cancelledUploads: new Set(serializedCancelled)
+    };
+
     return true;
   } catch (err) { log('Config save error: ' + err.message, 'ERROR'); return false; }
 }
@@ -294,6 +316,13 @@ async function processFile(filePath) {
 
     // Check if file is already in cancelled uploads
     const hash = getFileHash(filePath, stats);
+
+    // Ensure cancelledUploads is a Set
+    if (!(agentConfig.cancelledUploads instanceof Set)) {
+      log('ERROR: cancelledUploads is not a Set, reinitializing', 'ERROR');
+      agentConfig.cancelledUploads = new Set();
+    }
+
     if (agentConfig.cancelledUploads.has(hash)) {
       log(`Ignored cancelled file: ${fileName}`);
       return;

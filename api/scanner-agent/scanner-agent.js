@@ -23,10 +23,14 @@ const CANCELLED_SCANS_PATH = path.join(__dirname, 'cancelled-scans.json');
 const SCANNER_TOKEN = config.token;
 const UPLOAD_DELAY_MS = 2000;
 
-// Agent state
+// Agent state - ensure proper initialization
 let pendingUploads = new Map();
 let cancelledUploads = new Set();
 let statusCheckInterval = null;
+
+// Validation logging
+console.log('Initial cancelledUploads type:', cancelledUploads.constructor.name);
+console.log('Initial pendingUploads type:', pendingUploads.constructor.name);
 
 console.log('Backend API:', API_BASE_URL);
 console.log('Pending API:', PENDING_API_URL);
@@ -221,6 +225,13 @@ watcher.on('add', (filePath) => {
 
     // Check if file is already in cancelled uploads
     const hash = getFileHash(filePath, stats);
+
+    // Ensure cancelledUploads is a Set
+    if (!(cancelledUploads instanceof Set)) {
+      console.error('ERROR: cancelledUploads is not a Set, reinitializing');
+      cancelledUploads = new Set();
+    }
+
     if (cancelledUploads.has(hash)) {
       console.log(`Ignored cancelled file: ${fileName}`);
       return;

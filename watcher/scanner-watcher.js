@@ -277,6 +277,13 @@ const initWatcher = () => {
 
         // Check if file is already in cancelled uploads
         const hash = getFileHash(filePath, stats);
+
+        // Ensure cancelledUploads is a Set
+        if (!(cancelledUploads instanceof Set)) {
+          console.error('\x1b[31mERROR: cancelledUploads is not a Set, reinitializing\x1b[0m');
+          cancelledUploads = new Set();
+        }
+
         if (cancelledUploads.has(hash)) {
           console.log(`\x1b[90mIgnored cancelled file:\x1b[0m ${fileName}`);
           return;
