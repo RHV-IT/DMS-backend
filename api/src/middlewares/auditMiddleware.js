@@ -1,5 +1,5 @@
 const AuditLog = require('../models/AuditLog');
-const { parseUserAgent } = require('../helpers/deviceParser');
+const DeviceInfoExtractor = require('../utils/deviceInfo');
 
 const ipInfoCache = new Map();
 const CACHE_DURATION = 24 * 60 * 60 * 1000;
@@ -53,33 +53,26 @@ async function getIpInfo(ip) {
 
 async function createAuditLog(req, user, action, resource = null, resourceId = null, details = null) {
   try {
-    const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() 
-      || req.headers['x-real-ip'] 
-      || req.connection?.remoteAddress 
-      || req.socket?.remoteAddress 
-      || 'Unknown';
+    // Use device info from middleware if available, otherwise extract it
+    const deviceInfo = req.deviceInfo || DeviceInfoExtractor.extractFromRequest(req);
 
-    const userAgentString = req.headers['user-agent'] || '';
-    const device = parseUserAgent(userAgentString);
-    const location = await getIpInfo(ipAddress);
-
-    const systemName = req.headers['x-system-name'] || req.headers['X-System-Name'] || null;
-    const systemSpec = req.headers['x-system-spec'] || req.headers['X-System-Spec'] || null;
+    // Generate summary based on action and device info
+    let summary = null;
+    if (action === 'login') {
+      summary = `${user.name} logged in from ${deviceInfo.machine?.machineName || deviceInfo.device?.deviceName || 'Unknown Device'}`;
+    } else if (action === 'logout') {
+      summary = `${user.name} logged out from ${deviceInfo.machine?.machineName || deviceInfo.device?.deviceName || 'Unknown Device'}`;
+    }
 
     await AuditLog.create({
+      ...deviceInfo,
       userId: user._id,
       userEmail: user.email,
       action,
       resource,
       resourceId,
       details,
-      ipAddress,
-      location,
-      device,
-      sessionId: req.headers['x-session-id'] || null,
-      systemName,
-      systemSpec,
-      timestamp: new Date()
+      summary
     });
   } catch (error) {
     console.error('Failed to create audit log:', error.message);

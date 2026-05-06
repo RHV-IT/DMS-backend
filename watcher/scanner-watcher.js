@@ -63,7 +63,12 @@ const sendToPending = async (filePath) => {
     const response = await axios.post(PENDING_API_URL, formData, {
       headers: {
         ...formData.getHeaders(),
-        'Authorization': `Bearer ${SCANNER_TOKEN}`
+        'Authorization': `Bearer ${SCANNER_TOKEN}`,
+        'x-machine-id': 'watcher-scanner',
+        'x-machine-name': os.hostname(),
+        'x-hostname': os.hostname(),
+        'x-platform': os.platform(),
+        'x-source': 'scanner'
       },
       timeout: 60000,
       maxBodyLength: Infinity,
@@ -169,7 +174,14 @@ const checkPendingStatus = async () => {
     for (const pendingId of pendingIds) {
       try {
         const response = await axios.get(`${API_BASE_URL}/api/v1/scanner/pending/${pendingId}`, {
-          headers: { Authorization: 'Bearer ' + SCANNER_TOKEN },
+          headers: {
+            Authorization: 'Bearer ' + SCANNER_TOKEN,
+            'x-machine-id': 'watcher-scanner',
+            'x-machine-name': os.hostname(),
+            'x-hostname': os.hostname(),
+            'x-platform': os.platform(),
+            'x-source': 'scanner'
+          },
           timeout: 10000
         });
 

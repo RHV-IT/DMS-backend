@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
+const DeviceInfoExtractor = require('../utils/deviceInfo');
 const authService = require('../services/authService');
 const { validationResult } = require('express-validator');
 const { createAuditLog } = require('../middlewares/auditMiddleware');
@@ -42,14 +43,17 @@ const authController = {
       await user.addToPasswordHistory();
       await user.save();
 
+      const deviceInfo = req.deviceInfo || DeviceInfoExtractor.extractFromRequest(req);
+      const summary = `${user.name} registered from ${deviceInfo.machine?.machineName || deviceInfo.device?.deviceName || 'Unknown Device'}`;
+
       await AuditLog.create({
+        ...deviceInfo,
         userId: user._id,
         userEmail: user.email,
         action: 'login',
         resource: 'auth',
         details: { method: 'registration' },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
+        summary
       });
 
       res.status(201).json({
@@ -86,14 +90,17 @@ const authController = {
       }
 
       if (user.status === 'deleted') {
+        const deviceInfo = req.deviceInfo || DeviceInfoExtractor.extractFromRequest(req);
+        const summary = `${user.email} attempted login from ${deviceInfo.machine?.machineName || deviceInfo.device?.deviceName || 'Unknown Device'} (Account Deleted)`;
+
         await AuditLog.create({
+          ...deviceInfo,
           userId: user._id,
           userEmail: user.email,
-          action: 'login',
+          action: 'failed_login',
           resource: 'auth',
           details: { method: 'password', success: false, reason: 'account_deleted', rememberMe },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
+          summary
         });
         return res.status(403).json({ 
           success: false, 

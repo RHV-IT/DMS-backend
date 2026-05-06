@@ -65,7 +65,12 @@ const sendToPending = async (filePath) => {
     const response = await axios.post(PENDING_API_URL, formData, {
       headers: {
         ...formData.getHeaders(),
-        'Authorization': `Bearer ${SCANNER_TOKEN}`
+        'Authorization': `Bearer ${SCANNER_TOKEN}`,
+        'x-machine-id': 'api-scanner',
+        'x-machine-name': os.hostname(),
+        'x-hostname': os.hostname(),
+        'x-platform': os.platform(),
+        'x-source': 'scanner'
       },
       timeout: 60000,
       maxBodyLength: Infinity,

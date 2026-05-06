@@ -65,12 +65,16 @@ const auditLogSchema = new mongoose.Schema({
     machineId: String,
     machineName: String,
     hostname: String,
+    os: String,
+    osVersion: String,
+    deviceManufacturer: String,
+    deviceModel: String,
     localIp: String,
-    publicIp: String
-  },
-  scanner: {
-    source: String,
-    uploadMethod: String
+    publicIp: String,
+    source: {
+      type: String,
+      enum: ['web', 'scanner-agent', 'scanner', 'api']
+    }
   },
   device: {
     browser: String,
@@ -83,6 +87,14 @@ const auditLogSchema = new mongoose.Schema({
     screenResolution: String,
     language: String,
     platform: String
+  },
+  scanner: {
+    source: String,
+    uploadMethod: String
+  },
+  summary: {
+    type: String,
+    description: 'Human-readable summary of the action with machine info'
   },
   sessionId: String,
   systemName: String,

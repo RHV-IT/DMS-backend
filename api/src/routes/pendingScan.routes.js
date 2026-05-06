@@ -44,13 +44,38 @@ router.delete('/pending/:id', pendingScanController.deletePendingScan);
 // Stats
 router.get('/pending/stats', pendingScanController.getPendingStats);
 
+// Serve permanent pending files
+router.get('/pending-file/:filename', (req, res) => {
+  const { filename } = req.params;
+  const filePath = path.join(PENDING_UPLOAD_PATH, filename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ success: false, message: 'Pending file not found' });
+  }
+
+  // Set appropriate headers and stream the file
+  const stat = fs.statSync(filePath);
+  res.setHeader('Content-Length', stat.size);
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
+});
+
 // Debug endpoint to list all pending scans (bypass filter)
 router.get('/pending-all', async (req, res) => {
-  const PendingScan = require('../models/PendingScan');
+
   const scans = await PendingScan.find({ status: 'pending' })
-    .populate('assignedTo', 'name email _id')
-    .sort({ createdAt: -1 });
-  res.json({ success: true, data: scans });
+    .populate('assignedTo', 'name email')
+    .populate('confirmedBy', 'name email')
+    .sort({ createdAt: -1 })
+    .limit(50);
+
+  res.json({
+    success: true,
+    data: scans
+  });
 });
 
 module.exports = router;

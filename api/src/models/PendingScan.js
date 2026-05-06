@@ -11,6 +11,15 @@ const pendingScanSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Permanent storage path (for production environments)
+  permanentFilePath: {
+    type: String,
+    required: false
+  },
+  permanentFileUrl: {
+    type: String,
+    required: false
+  },
   originalName: {
     type: String,
     required: true

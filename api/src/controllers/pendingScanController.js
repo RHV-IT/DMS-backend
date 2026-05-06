@@ -3,6 +3,7 @@ const FileVersion = require('../models/FileVersion');
 const PendingScan = require('../models/PendingScan');
 const AuditLog = require('../models/AuditLog');
 const Permission = require('../models/Permission');
+const DeviceInfoExtractor = require('../utils/deviceInfo');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -12,6 +13,8 @@ const { v4: uuidv4 } = require('uuid');
 
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 const UPLOAD_PATH = process.env.UPLOAD_PATH || path.join(os.tmpdir(), 'uploads');
+// Permanent storage for pending scans (survives serverless restarts)
+const PENDING_UPLOAD_PATH = process.env.PENDING_UPLOAD_PATH || path.join(process.cwd(), 'pending-uploads');
 
 /**
  * Generate a stable file fingerprint for deduplication
@@ -34,14 +37,17 @@ function generateFileFingerprint(filePath, fileName, fileSize, machineId) {
   }
 }
 
-// Ensure upload directory exists
+// Ensure upload directories exist
 try {
   if (!fs.existsSync(UPLOAD_PATH)) {
     fs.mkdirSync(UPLOAD_PATH, { recursive: true });
   }
+  if (!fs.existsSync(PENDING_UPLOAD_PATH)) {
+    fs.mkdirSync(PENDING_UPLOAD_PATH, { recursive: true });
+  }
 } catch (error) {
-  console.warn('Could not create upload directory:', error.message);
-  // Continue execution - directory might already exist or be accessible
+  console.warn('Could not create upload directories:', error.message);
+  // Continue execution - directories might already exist or be accessible
 }
 
 const scannerController = {
@@ -108,10 +114,32 @@ const scannerController = {
         });
       }
 
-      // Create PendingScan record
+      // Move file to permanent storage immediately
+      const permanentFilename = `${uuidv4()}-${fileName}`;
+      const permanentFilePath = path.join(PENDING_UPLOAD_PATH, permanentFilename);
+
+      try {
+        await fs.promises.rename(req.file.path, permanentFilePath);
+        console.log('[SCANNER UPLOAD] Moved to permanent storage:', permanentFilePath);
+      } catch (moveErr) {
+        console.error('[SCANNER UPLOAD] Failed to move to permanent storage:', moveErr.message);
+        // Fallback: copy instead of move
+        try {
+          await fs.promises.copyFile(req.file.path, permanentFilePath);
+          await fs.promises.unlink(req.file.path);
+          console.log('[SCANNER UPLOAD] Copied to permanent storage:', permanentFilePath);
+        } catch (copyErr) {
+          console.error('[SCANNER UPLOAD] Failed to copy to permanent storage:', copyErr.message);
+          throw new Error('Failed to store file permanently');
+        }
+      }
+
+      // Create PendingScan record with permanent paths
       const pendingScan = await PendingScan.create({
         id: uuidv4().replace(/-/g, '').toUpperCase(),
-        filePath: req.file.path,
+        filePath: req.file.path, // Keep original temp path for cleanup
+        permanentFilePath,
+        permanentFileUrl: `/api/v1/scanner/pending-file/${path.basename(permanentFilePath)}`,
         originalName: fileName,
         status: 'pending',
         fileSize,
@@ -141,9 +169,21 @@ const scannerController = {
         status: pendingScan.status
       });
 
-      // Log creation
+      // Log creation with device info
       if (user) {
+        const deviceInfo = DeviceInfoExtractor.extractFromScanner({
+          machineId: finalMachineId,
+          machineName: machineName,
+          hostname: hostname,
+          os: os,
+          osVersion: osVersion,
+          localIp: localIp
+        });
+
+        const summary = `${user.name} uploaded ${fileName} from ${machineName || hostname || 'Scanner'} (Scanner Agent)`;
+
         await AuditLog.create({
+          ...deviceInfo,
           userId: user._id,
           userEmail: user.email,
           action: 'upload',
@@ -153,10 +193,11 @@ const scannerController = {
             fileName,
             size: fileSize,
             department: pendingScan.department,
-            uploadSource: 'scanner_pending'
+            uploadSource: 'scanner_pending',
+            machineId: finalMachineId,
+            fileFingerprint
           },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
+          summary
         });
       }
 
@@ -361,8 +402,9 @@ const scannerController = {
         });
       }
 
-      // Validate file still exists
-      if (!fs.existsSync(pendingScan.filePath)) {
+      // Validate permanent file still exists
+      const sourceFilePath = pendingScan.permanentFilePath || pendingScan.filePath;
+      if (!fs.existsSync(sourceFilePath)) {
         return res.status(404).json({
           success: false,
           message: 'Source file not found on disk. It may have been moved or deleted.'
@@ -373,7 +415,7 @@ const scannerController = {
       let conversionResult;
       try {
         conversionResult = await FileConverter.convert(
-          pendingScan.filePath,
+          sourceFilePath,
           targetFormat,
           { quality: 90 }
         );
@@ -434,8 +476,12 @@ const scannerController = {
         finalFileId: file.fileId
       });
 
-      // Step 6: Log audit
+      // Step 6: Log audit with device info
+      const deviceInfo = DeviceInfoExtractor.extractFromRequest(req);
+      const summary = `${user.name} confirmed ${file.name} from ${pendingScan.machineMetadata?.machineName || 'Scanner'} (Scanner Agent)`;
+
       await AuditLog.create({
+        ...deviceInfo,
         userId: user._id,
         userEmail: user.email,
         action: 'upload',
@@ -448,21 +494,24 @@ const scannerController = {
           convertedFrom: path.extname(pendingScan.originalName).toLowerCase().replace('.', ''),
           uploadSource: 'scanner_confirmed',
           machineId: pendingScan.machineId,
-          fileFingerprint: pendingScan.fileFingerprint
+          fileFingerprint: pendingScan.fileFingerprint,
+          originalPendingScanId: pendingScan.id
         },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-        ...req.auditEnhancement // Include machine, location, scanner data
+        summary
       });
 
-      // Step 7: Delete original file from scan folder (SAFE — only after success)
+      // Step 7: Delete permanent pending file (SAFE — only after success)
       try {
-        if (fs.existsSync(pendingScan.filePath)) {
+        if (fs.existsSync(sourceFilePath)) {
+          fs.unlinkSync(sourceFilePath);
+          console.log(`[Scanner] Deleted permanent pending file: ${sourceFilePath}`);
+        }
+        // Also clean up temp file if it exists
+        if (pendingScan.filePath && pendingScan.filePath !== sourceFilePath && fs.existsSync(pendingScan.filePath)) {
           fs.unlinkSync(pendingScan.filePath);
-          console.log(`[Scanner] Deleted original file: ${pendingScan.filePath}`);
         }
       } catch (delErr) {
-        console.error(`[Scanner] Failed to delete original file: ${delErr.message}`);
+        console.error(`[Scanner] Failed to delete pending file: ${delErr.message}`);
         // Don't fail the request — file was converted and saved
       }
 
@@ -474,7 +523,7 @@ const scannerController = {
         data: file,
         fileUrl,
         fileId: file.fileId,
-        deleteLocal: true,
+        deleteLocal: true, // Agent should delete local scanned file
         originalFilePath: pendingScan.filePath,
         message: `File confirmed and converted to ${finalFormat.toUpperCase()} successfully`
       });
@@ -551,8 +600,12 @@ const scannerController = {
         errorMessage: reason || 'Cancelled by user'
       });
 
-      // Enhanced audit log
+      // Enhanced audit log with device info
+      const deviceInfo = DeviceInfoExtractor.extractFromRequest(req);
+      const summary = `${user.name} cancelled ${pendingScan.originalName} from ${pendingScan.machineMetadata?.machineName || 'Scanner'}`;
+
       await AuditLog.create({
+        ...deviceInfo,
         userId: user._id,
         userEmail: user.email,
         action: 'delete',
@@ -565,9 +618,7 @@ const scannerController = {
           machineId: pendingScan.machineId,
           fileFingerprint: pendingScan.fileFingerprint
         },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-        ...req.auditEnhancement // Include machine, location, scanner data
+        summary
       });
 
       res.json({

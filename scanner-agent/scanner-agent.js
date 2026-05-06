@@ -228,12 +228,12 @@ async function uploadFile(filePath) {
     const response = await axios.post(`${API_BASE}/api/v1/scanner/pending`, formData, {
       headers: {
         ...formData.getHeaders(),
-        'Authorization': 'Bearer ' + agentConfig.token,
-        'X-Machine-Id': machineId,
-        'X-Machine-Name': os.hostname(),
-        'X-Hostname': os.hostname(),
-        'X-Scanner-Source': 'scanner-agent',
-        'X-Upload-Method': 'form-data'
+        Authorization: `Bearer ${SCANNER_TOKEN}`,
+        'x-machine-id': config.machineId || 'unknown',
+        'x-machine-name': os.hostname(),
+        'x-hostname': os.hostname(),
+        'x-platform': os.platform(),
+        'x-source': 'scanner-agent'
       },
       timeout: 60000, maxContentLength: Infinity, maxBodyLength: Infinity
     });

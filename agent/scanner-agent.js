@@ -177,7 +177,14 @@ async function checkPendingStatus() {
     for (const pendingId of pendingIds) {
       try {
         const response = await axios.get(`${API_BASE}/api/v1/scanner/pending/${pendingId}`, {
-          headers: { Authorization: 'Bearer ' + agentConfig.token },
+          headers: {
+            Authorization: 'Bearer ' + agentConfig.token,
+            'x-machine-id': agentConfig.machineId,
+            'x-machine-name': os.hostname(),
+            'x-hostname': os.hostname(),
+            'x-platform': os.platform(),
+            'x-source': 'scanner-agent'
+          },
           timeout: 10000
         });
 
@@ -274,7 +281,15 @@ async function uploadFile(filePath) {
     formData.append('machineId', machineId);
 
     const response = await axios.post(`${API_BASE}/api/v1/scanner/pending`, formData, {
-      headers: { ...formData.getHeaders(), Authorization: `Bearer ${agentConfig.token}` },
+      headers: {
+        ...formData.getHeaders(),
+        Authorization: `Bearer ${agentConfig.token}`,
+        'x-machine-id': agentConfig.machineId,
+        'x-machine-name': os.hostname(),
+        'x-hostname': os.hostname(),
+        'x-platform': os.platform(),
+        'x-source': 'scanner-agent'
+      },
       timeout: 60000, maxContentLength: Infinity, maxBodyLength: Infinity
     });
     if (response.data?.success) {
