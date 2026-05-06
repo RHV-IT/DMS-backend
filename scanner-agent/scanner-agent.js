@@ -12,6 +12,7 @@ require('dotenv').config();
 const SCAN_DIR = path.join(os.homedir(), 'Documents', 'Scan');
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 const PROCESSED_FILES_PATH = path.join(__dirname, 'processed-files.json');
+const CANCELLED_SCANS_PATH = path.join(__dirname, 'cancelled-scans.json');
 const LOG_PATH = path.join(__dirname, 'scanner.log');
 
 const LOCAL_PORT = 4001;
@@ -47,7 +48,9 @@ let agentConfig = {
   userId: null,
   userEmail: null,
   machineId: null,
-  apiUrl: `${API_BASE}/api/v1/scanner/pending`
+  apiUrl: `${API_BASE}/api/v1/scanner/pending`,
+  pendingUploads: new Map(),
+  cancelledUploads: new Set()
 };
 
 function log(message, level = 'INFO') {
@@ -63,11 +66,22 @@ function loadConfig() {
     if (fs.existsSync(CONFIG_PATH)) {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
       agentConfig = { ...agentConfig, ...data };
+
+      // Restore Map and Set from saved data
+      agentConfig.pendingUploads = new Map(data.pendingUploads || []);
+      agentConfig.cancelledUploads = new Set(data.cancelledUploads || []);
+
       // Generate machineId if not set
       if (!agentConfig.machineId) {
         agentConfig.machineId = `machine-${crypto.randomUUID().replace(/-/g, '').toLowerCase()}`;
         saveConfig(agentConfig);
       }
+
+      // Load cancelled scans from separate file (for persistence across restarts)
+      const persistentCancelled = loadCancelledScans();
+      // Merge with config cancelled uploads
+      agentConfig.cancelledUploads = new Set([...agentConfig.cancelledUploads, ...persistentCancelled]);
+
       return agentConfig;
     }
   } catch (err) { log('Config load error: ' + err.message, 'ERROR'); }
@@ -77,7 +91,13 @@ function loadConfig() {
 function saveConfig(data) {
   try {
     const toSave = { ...agentConfig, ...data, savedAt: new Date().toISOString() };
+    // Convert Map and Set to serializable format
+    toSave.pendingUploads = Array.from(toSave.pendingUploads.entries());
+    toSave.cancelledUploads = Array.from(toSave.cancelledUploads);
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(toSave, null, 2));
+    // Restore the Map and Set in memory
+    agentConfig.pendingUploads = new Map(toSave.pendingUploads);
+    agentConfig.cancelledUploads = new Set(toSave.cancelledUploads);
     agentConfig = toSave;
     return true;
   } catch (err) { log('Config save error: ' + err.message, 'ERROR'); return false; }
@@ -94,6 +114,29 @@ function loadProcessedFiles() {
 
 function saveProcessedFiles(files) {
   fs.writeFileSync(PROCESSED_FILES_PATH, JSON.stringify({ files: Array.from(files) }, null, 2));
+}
+
+function loadCancelledScans() {
+  try {
+    if (fs.existsSync(CANCELLED_SCANS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(CANCELLED_SCANS_PATH, 'utf8'));
+      return new Set(data.files || []);
+    }
+  } catch (err) {
+    log('Cancelled scans load error: ' + err.message, 'WARNING');
+  }
+  return new Set();
+}
+
+function saveCancelledScans(cancelledScans) {
+  try {
+    fs.writeFileSync(CANCELLED_SCANS_PATH, JSON.stringify({
+      files: Array.from(cancelledScans),
+      lastUpdated: new Date().toISOString()
+    }, null, 2));
+  } catch (err) {
+    log('Cancelled scans save error: ' + err.message, 'ERROR');
+  }
 }
 
 function getFileHash(filePath, stats) {
@@ -175,14 +218,20 @@ async function uploadFile(filePath) {
 
     if (response.status === 200 || response.status === 201 || response.data?.success) {
       console.log(`Upload successful: ${fileName}`);
+      log(`Pending upload: ${fileName}`);
 
-      fs.unlink(filePath, (err) => {
-        if (err) {
-          console.error(`Delete failed: ${fileName}`, err);
-        } else {
-          console.log(`File deleted: ${fileName}`);
-        }
-      });
+      // DO NOT delete file immediately - wait for confirmation
+      // Add to pending uploads tracking
+      const pendingId = response.data?.data?.id;
+      if (pendingId) {
+        agentConfig.pendingUploads.set(pendingId, {
+          filePath,
+          fileName,
+          uploadedAt: new Date().toISOString(),
+          machineId: agentConfig.machineId
+        });
+        saveConfig(agentConfig);
+      }
 
       return { success: true, data: response.data?.data, filePath: filePath };
     } else {
@@ -205,8 +254,24 @@ async function processFile(filePath) {
       log('Skipped (too large): ' + fileName, 'WARNING');
       return;
     }
-    const processed = loadProcessedFiles();
+
+    // Check if file is already in cancelled uploads
     const hash = getFileHash(filePath, stats);
+    if (agentConfig.cancelledUploads.has(hash)) {
+      log(`Ignored cancelled file: ${fileName}`);
+      return;
+    }
+
+    // Check if file is already pending upload
+    const isPending = Array.from(agentConfig.pendingUploads.values()).some(
+      pending => pending.filePath === filePath
+    );
+    if (isPending) {
+      log(`Already pending: ${fileName}`);
+      return;
+    }
+
+    const processed = loadProcessedFiles();
     if (processed.has(hash)) return;
     log('Detected: ' + fileName);
 
@@ -256,7 +321,76 @@ function startWatcher() {
     processFile(filePath);
   });
   watcher.on('error', (err) => log('Watcher error: ' + err.message, 'ERROR'));
-  watcher.on('ready', () => log('Watching for scans...'));
+  watcher.on('ready', () => {
+    log('Watching for scans...');
+    // Start periodic status checker
+    startStatusChecker();
+  });
+}
+
+let statusCheckInterval = null;
+
+function startStatusChecker() {
+  if (statusCheckInterval) clearInterval(statusCheckInterval);
+  statusCheckInterval = setInterval(checkPendingStatus, 30000); // Check every 30 seconds
+  log('Started pending status checker (30s interval)');
+}
+
+async function checkPendingStatus() {
+  if (!authToken || agentConfig.pendingUploads.size === 0) return;
+
+  try {
+    const pendingIds = Array.from(agentConfig.pendingUploads.keys());
+    log(`Checking status of ${pendingIds.length} pending uploads`);
+
+    for (const pendingId of pendingIds) {
+      try {
+        const response = await axios.get(`${API_BASE}/api/v1/scanner/pending/${pendingId}`, {
+          headers: { Authorization: 'Bearer ' + authToken },
+          timeout: 10000
+        });
+
+        if (response.data?.success && response.data?.data) {
+          const pendingScan = response.data.data;
+          const pendingData = agentConfig.pendingUploads.get(pendingId);
+
+          if (pendingScan.status === 'confirmed') {
+            log(`Confirmed: ${pendingData.fileName} - deleting local file`);
+            // Delete the local file
+            if (fs.existsSync(pendingData.filePath)) {
+              fs.unlinkSync(pendingData.filePath);
+              log(`Deleted local file: ${pendingData.fileName}`);
+            }
+            // Remove from pending
+            agentConfig.pendingUploads.delete(pendingId);
+            saveConfig(agentConfig);
+
+          } else if (pendingScan.status === 'cancelled') {
+            log(`Cancelled: ${pendingData.fileName} - keeping local file`);
+            // Add to cancelled uploads to ignore permanently
+            const fileHash = getFileHash(pendingData.filePath, fs.statSync(pendingData.filePath));
+            agentConfig.cancelledUploads.add(fileHash);
+            saveCancelledScans(agentConfig.cancelledUploads);
+            // Remove from pending
+            agentConfig.pendingUploads.delete(pendingId);
+            saveConfig(agentConfig);
+          }
+          // If still pending, keep waiting
+        }
+      } catch (err) {
+        // If 404, pending scan might be deleted - remove from tracking
+        if (err.response?.status === 404) {
+          log(`Pending scan ${pendingId} not found - removing from tracking`);
+          agentConfig.pendingUploads.delete(pendingId);
+          saveConfig(agentConfig);
+        } else {
+          log(`Status check error for ${pendingId}: ${err.message}`, 'WARNING');
+        }
+      }
+    }
+  } catch (err) {
+    log(`Status check failed: ${err.message}`, 'ERROR');
+  }
 }
 
 function parseBody(req) {
@@ -385,6 +519,7 @@ function main() {
   process.on('SIGINT', () => {
     log('Shutting down...');
     if (watcher) watcher.close();
+    if (statusCheckInterval) clearInterval(statusCheckInterval);
     process.exit(0);
   });
 }
