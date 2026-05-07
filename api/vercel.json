@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "*.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "regions": ["fra1"],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

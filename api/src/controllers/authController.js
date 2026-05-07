@@ -4,6 +4,7 @@ const DeviceInfoExtractor = require('../utils/deviceInfo');
 const authService = require('../services/authService');
 const { validationResult } = require('express-validator');
 const { createAuditLog } = require('../middlewares/auditMiddleware');
+const { userOperations } = require('../utils/databaseUtils');
 
 const authController = {
   register: async (req, res, next) => {
@@ -15,7 +16,7 @@ const authController = {
 
       const { name, email, password, department } = req.body;
 
-      const existingUser = await User.findOne({ email });
+      const existingUser = await userOperations.findOne({ email });
       
       if (existingUser) {
         if (existingUser.status === 'deleted') {
@@ -84,7 +85,7 @@ const authController = {
 
       const { email, password, rememberMe } = req.body;
 
-      const user = await User.findOne({ email });
+      const user = await userOperations.findOne({ email });
       if (!user) {
         return res.status(401).json({ success: false, message: 'Invalid email or password' });
       }

@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 const connectDB = require('./config/database');
+const { ensureConnected } = require('./config/database');
 const logger = require('./config/logger');
 const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
 const mongoose = require('mongoose');
@@ -90,6 +91,9 @@ app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`);
   next();
 });
+
+// Ensure database connection for all API routes
+app.use('/api', ensureConnected);
 
 const { enhanceAuditLog } = require('./middlewares/auditEnhancementMiddleware');
 app.use(enhanceAuditLog);
@@ -210,37 +214,36 @@ const startServer = async (retryCount = 0) => {
   }
 };
 
+// Initialize database connection for all environments
+const initializeApp = async () => {
+  try {
+    await connectDB();
+    console.log('✅ Database connected during app initialization');
+
+    // Only seed in development or when explicitly requested
+    if (process.env.NODE_ENV === 'development' || process.env.SEED_DATA === 'true') {
+      await seedDepartments().catch(() => { });
+      await seedSuperAdmin().catch(() => { });
+    }
+  } catch (err) {
+    console.error('❌ DB connection failed during initialization:', err.message);
+    // In production/serverless, don't exit - let individual requests handle connection issues
+    if (process.env.NODE_ENV === 'development') {
+      process.exit(1);
+    }
+  }
+};
+
 // Start server if this file is run directly (not imported as module)
 if (require.main === module) {
-  startServer();
+  initializeApp().then(() => {
+    startServer();
+  });
 }
 
 module.exports = app;
 module.exports.startServer = startServer;
-
-// Production initialization
-if (process.env.NODE_ENV === 'production') {
-  const initProduction = async (retryCount = 0) => {
-    const maxRetries = 3;
-    try {
-      await connectDB();
-      console.log('✅ Database connected');
-      await seedDepartments().catch(() => { });
-      await seedSuperAdmin().catch(() => { });
-    } catch (err) {
-      console.error('❌ DB connection failed:', err.message);
-      if (retryCount < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
-        console.log(`Retrying database connection in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
-        setTimeout(() => initProduction(retryCount + 1), delay);
-      } else {
-        console.error(`Failed to connect to database after ${maxRetries} attempts in production`);
-        process.exit(1);
-      }
-    }
-  };
-  initProduction();
-}
+module.exports.initializeApp = initializeApp;
 
 // Global error handlers
 process.on('unhandledRejection', (reason, promise) => {
