@@ -46,7 +46,6 @@ const connectDB = async () => {
       // Additional serverless optimizations
       ...(isServerless && {
         bufferCommands: false,
-        bufferMaxEntries: 0,
       }),
     };
 
