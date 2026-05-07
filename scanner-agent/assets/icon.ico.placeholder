@@ -1,0 +1,3 @@
+# Placeholder for scanner agent icon
+# This would be a proper .ico file in production
+# For now, electron-builder will use a default icon

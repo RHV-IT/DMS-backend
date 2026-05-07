@@ -1,19 +1,60 @@
 {
-  "name": "dms-scanner-agent",
+  "name": "rhv-dms-scanner-agent",
   "version": "1.0.0",
-  "description": "Distributed file scanning agent for document management system",
-  "main": "scanner-agent.js",
+  "description": "Scanner Agent for RHV DMS Backend",
+  "main": "main.js",
   "scripts": {
-    "start": "node scanner-agent.js",
-    "setup": "node setup.js",
-    "set-token": "node set-token.js"
+    "start": "node main.js",
+    "dev": "node main.js",
+    "build": "electron-builder",
+    "dist": "electron-builder --publish=never"
   },
-  "keywords": ["scanner", "document-management", "file-watcher"],
-  "author": "DMS Team",
-  "license": "MIT",
   "dependencies": {
+    "express": "^4.18.2",
     "axios": "^1.6.0",
     "chokidar": "^3.5.3",
-    "form-data": "^4.0.0"
+    "uuid": "^9.0.1",
+    "multer": "^1.4.5-lts.1",
+    "cors": "^2.8.5",
+    "systeminformation": "^5.21.20"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "build": {
+    "appId": "com.rhv.dms.scanner",
+    "productName": "RHV DMS Scanner Agent",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!build/**",
+      "!*.md",
+      "!package-lock.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "ia32"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RHV DMS Scanner",
+      "include": "installer.nsh"
+    }
   }
 }

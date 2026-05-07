@@ -9,35 +9,27 @@ const { handleScannedUpload } = require('../middlewares/uploadMiddleware');
 
 // Public download endpoints (no auth required)
 router.get('/auto-install-download', (req, res) => {
-  const scannerAgentDir = path.join(__dirname, '../../../scanner-agent');
+  const installerPath = path.join(__dirname, '../../../scanner-agent/dist/RHV-DMS-Scanner-Setup-1.0.0.exe');
 
-  const requiredFiles = ['scanner-agent.js', 'package.json', 'agent.bat', 'config.json'];
-  const missingFiles = requiredFiles.filter(f => !fs.existsSync(path.join(scannerAgentDir, f)));
-
-  if (missingFiles.length > 0) {
-    return res.status(404).json({ success: false, message: `Missing files: ${missingFiles.join(', ')}` });
+  if (!fs.existsSync(installerPath)) {
+    return res.status(404).json({
+      success: false,
+      message: 'Installer not available. Please contact administrator.'
+    });
   }
 
-  res.setHeader('Content-Disposition', 'attachment; filename="scanner-agent-package.zip"');
-  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="RHV-DMS-Scanner-Setup.exe"');
+  res.setHeader('Content-Type', 'application/octet-stream');
 
-  const archive = archiver('zip', { zlib: { level: 9 } });
+  const fileStream = fs.createReadStream(installerPath);
+  fileStream.pipe(res);
 
-  archive.on('error', (err) => {
-    console.error('Archive error:', err);
+  fileStream.on('error', (err) => {
+    console.error('Error streaming installer:', err);
     if (!res.headersSent) {
-      res.status(500).json({ success: false, message: 'Failed to create archive' });
+      res.status(500).json({ success: false, message: 'Failed to download installer' });
     }
   });
-
-  archive.pipe(res);
-
-  requiredFiles.forEach(file => {
-    const filePath = path.join(scannerAgentDir, file);
-    archive.file(filePath, { name: file });
-  });
-
-  archive.finalize();
 });
 
 router.get('/agent-download', (req, res) => {

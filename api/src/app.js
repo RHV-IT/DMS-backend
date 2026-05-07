@@ -59,6 +59,7 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const settingsRoutes = require('./routes/settings.routes');
 const scannerRoutes = require('./routes/scanner.routes');
 const pendingScanRoutes = require('./routes/pendingScan.routes');
+const agentRoutes = require('./routes/agent.routes');
 const { enhanceAuditLog } = require('./middlewares/auditEnhancementMiddleware');
 
 const app = express();
@@ -146,6 +147,7 @@ app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/scanner', scannerRoutes);
 app.use('/api/v1/scanner', pendingScanRoutes);
+app.use('/api/v1/agent', agentRoutes);
 
 // Config endpoint for confidentiality levels
 app.get('/api/v1/config/confidentiality-levels', (req, res) => {

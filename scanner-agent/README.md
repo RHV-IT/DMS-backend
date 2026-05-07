@@ -1,50 +1,104 @@
-# DMS Scanner Agent
+# RHV DMS Scanner Agent
 
-Distributed file scanning agent for the Document Management System.
-
-## Setup
-
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Configure backend URL:**
-   Create a `.env` file (copy from `.env.example`):
-   ```bash
-   API_BASE_URL=http://192.168.5.25:5000
-   ```
-
-3. **Run the agent:**
-   ```bash
-   npm start
-   # or
-   node scanner-agent.js
-   ```
-
-## Requirements
-
-- Node.js v24.13.1+ (uses built-in `crypto.randomUUID()`)
-- Dependencies: `axios`, `chokidar`, `form-data`
+A production-ready Windows scanner agent for the RHV Document Management System.
 
 ## Features
 
-- Watches scan directory for new files
-- Automatically uploads scanned documents to DMS backend
-- Uses pending scan workflow for confirmation
-- Configurable via environment variables
-- Self-contained with built-in Node.js crypto (no uuid dependency)
+- **Automatic Installation**: One-click installer for non-technical hospital staff
+- **Background Service**: Runs silently in the background, auto-starts on boot
+- **Folder Monitoring**: Automatically detects and uploads scanned documents
+- **Secure Authentication**: Integrates with DMS backend for secure file uploads
+- **Machine Registration**: Registers machines with the backend for tracking
+- **Standalone Executable**: No Node.js installation required
+
+## Installation for End Users
+
+1. Login to the DMS frontend
+2. Click "Download Scanner Agent"
+3. Run the downloaded `RHV-DMS-Scanner-Setup.exe`
+4. The agent installs automatically and starts monitoring the scan folder
+
+## Development Setup
+
+### Prerequisites
+
+- Node.js 18+
+- npm
+- Windows development environment (for building Windows installer)
+
+### Building the Installer
+
+1. Install dependencies:
+   ```bash
+   cd scanner-agent
+   npm install
+   ```
+
+2. Build the installer:
+   ```bash
+   npm run dist
+   ```
+
+3. The installer will be created in `scanner-agent/dist/`
+
+### Project Structure
+
+```
+scanner-agent/
+├── main.js                 # Electron main process
+├── package.json           # Dependencies and build config
+├── installer.nsh          # NSIS installer script
+├── assets/                # Icons and assets
+└── dist/                  # Built installers (generated)
+```
+
+## API Endpoints
+
+The agent exposes a local API on `http://localhost:4001`:
+
+### GET /health
+Returns agent health status.
+
+### GET /status
+Returns current agent configuration and status.
+
+### POST /set-token
+Sets authentication token for backend communication.
+
+Body:
+```json
+{
+  "token": "jwt-token",
+  "userId": "user-id",
+  "userEmail": "user@example.com",
+  "userName": "User Name",
+  "department": "department"
+}
+```
+
+## Backend Integration
+
+The agent automatically:
+- Registers with `/api/v1/agent/register`
+- Uploads files to `/api/v1/scanner/upload`
+- Monitors `Documents/Scan/` folder for new files
+- Supports PDF, JPG, PNG, TIFF, BMP files
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `API_BASE_URL` | `http://localhost:5000` | Backend API endpoint |
-| `SCAN_DIR` | `~/Documents/Scan` | Directory to monitor for scans |
+Configuration is stored in:
+`%USERPROFILE%\Documents\RHV-DMS-Scanner\config.json`
 
 ## Troubleshooting
 
-- **"Cannot find module" errors**: Run `npm install`
-- **Connection timeouts**: Check `API_BASE_URL` in `.env`
-- **Node.js version too old**: Upgrade to Node.js v24+</content>
-<parameter name="filePath">agent/README.md
+- Check Windows Event Viewer for errors
+- Verify the agent is running via Task Manager
+- Check `http://localhost:4001/health` for status
+- Ensure scan folder exists: `Documents/Scan/`
+
+## Security
+
+- All communication uses HTTPS
+- Files are uploaded with authentication tokens
+- No sensitive data is stored locally
+- Machine IDs are generated uniquely per installation
