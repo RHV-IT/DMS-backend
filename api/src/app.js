@@ -23,32 +23,92 @@ try {
   console.error('Upload directory creation failed:', err.message);
 }
 
-// Initialize database connection and seeding for local development
-if (process.env.NODE_ENV !== 'production') {
-  (async () => {
-    try {
-      await connectDB();
-      await seedDepartments();
-      await seedSuperAdmin();
-      console.log('Database ready');
-    } catch (err) {
-      console.error('Database initialization failed:', err);
+// ====================== CORS CONFIGURATION ======================
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  'http://192.168.4.213:3000',
+  'https://rhv-dms.vercel.app',
+  // Add more domains here as needed
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (Postman, mobile apps, curl, etc.)
+    if (!origin) {
+      return callback(null, true);
     }
-  })();
+
+    // Allow explicitly defined origins
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Development: Allow any localhost
+    if (process.env.NODE_ENV === 'development') {
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+    }
+
+    // Production: Allow Vercel domains and epilux domains
+    if (process.env.NODE_ENV === 'production') {
+      if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+      if (/^https?:\/\/([a-zA-Z0-9-]+\.)*epilux\.com\.ng$/.test(origin)) {
+        return callback(null, true);
+      }
+    }
+
+    // Log blocked origin for debugging
+    console.warn(`❌ CORS blocked origin: ${origin}`);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin'
+  ],
+  exposedHeaders: ['Content-Length', 'X-Total-Count']
+};
+// ================================================================
+
+const app = express();
+
+// Apply CORS
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Handle preflight requests
+
+app.use(cookieParser());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Logging middleware
+app.use((req, res, next) => {
+  logger.info(`${req.method} ${req.path}`);
+  next();
+});
+
+// Audit log enhancement middleware
+const { enhanceAuditLog } = require('./middlewares/auditEnhancementMiddleware');
+app.use(enhanceAuditLog);
+
+if (process.env.ENABLE_SWAGGER !== 'false') {
+  const swaggerSpec = require('./utils/swagger');
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.get('/api-docs.json', (req, res) => {
+    res.json(swaggerSpec);
+  });
 }
 
-// Global error handlers
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-  process.exit(1);
-});
-const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
-const swaggerSpec = require('./utils/swagger');
-
+// Routes
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
 const fileRoutes = require('./routes/file.routes');
@@ -60,91 +120,12 @@ const settingsRoutes = require('./routes/settings.routes');
 const scannerRoutes = require('./routes/scanner.routes');
 const pendingScanRoutes = require('./routes/pendingScan.routes');
 const agentRoutes = require('./routes/agent.routes');
-const { enhanceAuditLog } = require('./middlewares/auditEnhancementMiddleware');
-
-const app = express();
-
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:3000',
-  'http://192.168.4.213:3000',
-  'http://127.0.0.1:5173',
-  'http://192.168.2.53:3000',
-  'http://192.168.7.13:3000',
-  'https://rhv-dms.vercel.app',
-  '*'
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    try {
-      if (!origin) return callback(null, true);
-
-      // Check against explicitly allowed origins first
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-        return callback(null, true);
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        if (
-          /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
-          /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)
-        ) {
-          return callback(null, true);
-        }
-      }
-
-      if (process.env.NODE_ENV === 'production') {
-        // Allow explicitly configured domains OR epilux domains
-        if (/^https?:\/\/([a-zA-Z0-9-]+\.)*epilux\.com\.ng$/.test(origin)) {
-          return callback(null, true);
-        }
-        // Also allow Vercel deployments and other configured domains
-        if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin)) {
-          return callback(null, true);
-        }
-      }
-
-      return callback(new Error('Not allowed by CORS'));
-    } catch (err) {
-      return callback(err);
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
-app.use(cookieParser());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true }));
-
-
-
-app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path}`);
-  next();
-});
-
-
-
-// Audit log enhancement middleware
-app.use(enhanceAuditLog);
-
-if (process.env.ENABLE_SWAGGER !== 'false') {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-  app.get('/api-docs.json', (req, res) => {
-    res.json(swaggerSpec);
-  });
-}
 
 app.use('/api/v1/auth', authRoutes);
 app.post('/api/v1/auth/track-login', (req, res) => {
   res.status(200).json({ success: true, message: 'Login tracked' });
 });
+
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/files', fileRoutes);
 app.use('/api/v1/permissions', permissionRoutes);
@@ -153,38 +134,26 @@ app.use('/api/v1/logs', logRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/scanner', scannerRoutes);
-app.use('/api/v1/scanner', pendingScanRoutes);
+app.use('/api/v1/scanner', pendingScanRoutes); // Note: same prefix as above
 app.use('/api/v1/agent', agentRoutes);
 
-// Config endpoint for confidentiality levels
+// Config endpoint
 app.get('/api/v1/config/confidentiality-levels', (req, res) => {
   res.json({
     success: true,
     data: [
-      {
-        label: "Public",
-        value: "public"
-      },
-      {
-        label: "Internal",
-        value: "internal"
-      },
-      {
-        label: "Confidential",
-        value: "confidential"
-      },
-      {
-        label: "Highly Confidential",
-        value: "highly_confidential"
-      }
+      { label: "Public", value: "public" },
+      { label: "Internal", value: "internal" },
+      { label: "Confidential", value: "confidential" },
+      { label: "Highly Confidential", value: "highly_confidential" }
     ]
   });
 });
 
-// Admin registration endpoint (no auth required)
+// Admin registration
 app.post('/api/v1/admin/register', adminController.registerAdmin);
 
-// Serve scanner download page
+// Scanner download page
 app.get('/scanner', (req, res) => {
   const filePath = path.join(__dirname, '../public/scanner-download.html');
   if (fs.existsSync(filePath)) {
@@ -194,7 +163,7 @@ app.get('/scanner', (req, res) => {
   }
 });
 
-// Manual token set endpoint for scanner agent authentication
+// Set token endpoint
 app.post('/set-token', (req, res) => {
   const { token, userId, userEmail, userName } = req.body;
 
@@ -205,8 +174,6 @@ app.post('/set-token', (req, res) => {
     });
   }
 
-  // Store token in memory (for demo purposes)
-  // In production, use a proper session store or database
   req.session = req.session || {};
   req.session.token = token;
   req.session.userId = userId;
@@ -220,18 +187,17 @@ app.post('/set-token', (req, res) => {
   });
 });
 
+// Health check
 app.get('/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-  const success = dbStatus === 'connected';
-
-  res.status(success ? 200 : 503).json({
-    success,
+  res.status(dbStatus === 'connected' ? 200 : 503).json({
+    success: dbStatus === 'connected',
     database: dbStatus,
-    message: success ? 'DMS Server is running' : 'Database connection issue'
+    message: dbStatus === 'connected' ? 'DMS Server is running' : 'Database connection issue'
   });
 });
 
-// Root route / health check
+// Root route
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -240,39 +206,38 @@ app.get('/', (req, res) => {
   });
 });
 
-// Favicon route
-app.get('/favicon.ico', (req, res) => {
-  res.status(204).end(); // No Content
-});
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
 
 app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
+// Global error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
 const startServer = async () => {
   try {
     await connectDB();
     logger.info('Database connected');
 
-    // Run seeding on startup (non-blocking)
-    try {
-      await seedDepartments();
-    } catch (error) {
-      console.warn('Department seeding failed:', error.message);
-    }
-
-    try {
-      await seedSuperAdmin();
-    } catch (error) {
-      console.warn('Super Admin seeding failed:', error.message);
-    }
+    await seedDepartments().catch(err => console.warn('Department seeding failed:', err.message));
+    await seedSuperAdmin().catch(err => console.warn('Super Admin seeding failed:', err.message));
 
     if (process.env.NODE_ENV !== 'production') {
       app.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`);
-        console.log(`Server running on http://localhost:${PORT}`);
-        console.log(`API Docs: http://localhost:${PORT}/api-docs`);
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
+        console.log(`📄 API Docs: http://localhost:${PORT}/api-docs`);
       });
     }
   } catch (error) {
@@ -282,20 +247,13 @@ const startServer = async () => {
 };
 
 module.exports = app;
-
-// Export startServer for local development
 module.exports.startServer = startServer;
 
-// Initialize database connection and seeding for production
+// Production startup
 if (process.env.NODE_ENV === 'production') {
   connectDB().then(async () => {
-    console.log('DB connected');
-    try {
-      await seedDepartments();
-      await seedSuperAdmin();
-      console.log('Seeding completed');
-    } catch (err) {
-      console.error('Seeding failed:', err);
-    }
-  }).catch(err => console.error('DB connection failed:', err));
+    console.log('✅ DB connected');
+    await seedDepartments().catch(() => { });
+    await seedSuperAdmin().catch(() => { });
+  }).catch(err => console.error('❌ DB connection failed:', err));
 }

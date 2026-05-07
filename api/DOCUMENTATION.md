@@ -36,7 +36,10 @@ The backend is configured to accept cross-origin requests from multiple origins:
 - `http://localhost:5173`
 - `http://127.0.0.1:3000`
 - `http://127.0.0.1:5173`
-- `*` (wildcard for development)
+- `http://192.168.4.213:3000`
+- `http://192.168.2.53:3000`
+- `http://192.168.7.13:3000`
+- `*` (wildcard - allows all origins)
 
 **Dynamic Origins:**
 - Development: Any `localhost` or `127.0.0.1` on any port
