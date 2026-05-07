@@ -30,14 +30,17 @@ The backend is configured to accept cross-origin requests from multiple origins:
 - `https://www.epilux.com.ng`
 - `https://epilux.com.ng`
 - `https://epilux48.vercel.app`
+- `https://rhv-dms.vercel.app` (Frontend)
+- `https://rhv-dms-backend.vercel.app` (Backend)
 - `http://localhost:3000`
 - `http://localhost:5173`
 - `http://127.0.0.1:3000`
 - `http://127.0.0.1:5173`
+- `*` (wildcard for development)
 
 **Dynamic Origins:**
 - Development: Any `localhost` or `127.0.0.1` on any port
-- Production: Any subdomain of `epilux.com.ng`
+- Production: Any subdomain of `epilux.com.ng` or `vercel.app`
 
 **Configuration:**
 ```javascript
@@ -1928,11 +1931,67 @@ Initialize default confidentiality levels.
 
 ---
 
-## 10. Scanner Upload
+## 10. Scanner Agent & Upload
 
 > **Base URL:** `/api/v1/scanner`
 
 > **Note:** Scanner upload endpoints require `Authorization: Bearer <accessToken>` header.
+
+### Agent Management
+
+#### Get Agent Version
+Get current agent version and download URL.
+
+**Endpoint:** `GET /api/v1/agent/version`
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "version": "1.0.0",
+    "minimumSupportedVersion": "1.0.0",
+    "downloadUrl": "https://rhv-dms-backend.vercel.app/api/v1/scanner/auto-install-download"
+  }
+}
+```
+
+#### Register Agent
+Register a scanner agent machine.
+
+**Endpoint:** `POST /api/v1/agent/register`
+
+**Request Body:**
+```json
+{
+  "machineId": "machine-ABC123...",
+  "machineName": "DESKTOP-VQC2MOD",
+  "hostname": "DESKTOP-VQC2MOD",
+  "os": "Windows_NT",
+  "osVersion": "10.0.19045",
+  "agentVersion": "1.0.0",
+  "userId": "user-id",
+  "department": "IT"
+}
+```
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "message": "Agent registered successfully",
+  "data": { ...agent object }
+}
+```
+
+#### Download Agent Installer
+Download the scanner agent installer.
+
+**Endpoint:** `GET /api/v1/scanner/auto-install-download`
+
+**Response:** Windows batch installer (.bat) file download
+
+### Scanner Upload
 
 ### Upload Scanned File
 Upload a file from a local scanner agent.
@@ -1997,7 +2056,80 @@ A simpler version for quick scanner uploads.
 ---
 
 ### Upload to Pending (Agent)
-Upload scanned file to pending confirmation queue.
+Upload scanned file to pending confirmation queue with machine isolation.
+
+**Endpoint:** `POST /api/v1/scanner/pending`
+
+**Headers:** `Authorization: Bearer <accessToken>`
+
+**Content-Type:** `multipart/form-data`
+
+**Form Data:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| file | file | Yes | Scanned file (PDF, JPG, PNG, TIFF, BMP) |
+| machineId | string | Yes | Machine identifier (from os.hostname()) |
+| department | string | No | Department name |
+| uploadedBy | string | No | Uploader identifier |
+| machineName | string | No | Machine display name |
+| hostname | string | No | Machine hostname |
+| os | string | No | Operating system |
+| osVersion | string | No | OS version |
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "ABC123...",
+    "filePath": "/pending-uploads/ABC123.pdf",
+    "originalName": "scan001.pdf",
+    "fileSize": 2048000,
+    "machineId": "DESKTOP-VQC2MOD",
+    "status": "pending"
+  },
+  "message": "File uploaded to pending. Confirm to finalize."
+}
+```
+
+**Machine Isolation:** Each scanner agent only sees pending scans from its own machine, preventing cross-device interference.
+
+### Get Pending Scans
+Get pending scans for current user/machine.
+
+**Endpoint:** `GET /api/v1/scanner/pending`
+
+**Query Parameters:**
+| Param | Type | Description |
+|-------|------|-------------|
+| machineId | string | Filter by machine (recommended) |
+| status | string | Filter by status (default: pending) |
+| page | number | Page number |
+| limit | number | Items per page |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "pendingScans": [
+      {
+        "id": "ABC123...",
+        "originalName": "scan001.pdf",
+        "fileSize": 2048000,
+        "machineId": "DESKTOP-VQC2MOD",
+        "status": "pending",
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ],
+    "totalPages": 1,
+    "currentPage": 1,
+    "total": 1
+  }
+}
+```
+
+### Scanner Upload
 
 **Endpoint:** `POST /api/v1/scanner/pending`
 

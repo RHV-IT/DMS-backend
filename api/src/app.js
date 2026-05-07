@@ -82,7 +82,8 @@ const corsOptions = {
     try {
       if (!origin) return callback(null, true);
 
-      if (allowedOrigins.includes(origin)) {
+      // Check against explicitly allowed origins first
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
         return callback(null, true);
       }
 
@@ -96,7 +97,12 @@ const corsOptions = {
       }
 
       if (process.env.NODE_ENV === 'production') {
+        // Allow explicitly configured domains OR epilux domains
         if (/^https?:\/\/([a-zA-Z0-9-]+\.)*epilux\.com\.ng$/.test(origin)) {
+          return callback(null, true);
+        }
+        // Also allow Vercel deployments and other configured domains
+        if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin)) {
           return callback(null, true);
         }
       }
