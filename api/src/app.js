@@ -180,7 +180,8 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-const startServer = async () => {
+const startServer = async (retryCount = 0) => {
+  const maxRetries = 3;
   try {
     await connectDB();
     logger.info('Database connected');
@@ -196,21 +197,49 @@ const startServer = async () => {
       });
     }
   } catch (error) {
-    logger.error('Failed to start server:', error);
-    process.exit(1);
+    logger.error('Failed to start server:', error.message);
+
+    if (retryCount < maxRetries) {
+      const delay = Math.min(1000 * Math.pow(2, retryCount), 30000); // Exponential backoff, max 30s
+      logger.info(`Retrying database connection in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+      setTimeout(() => startServer(retryCount + 1), delay);
+    } else {
+      logger.error(`Failed to connect to database after ${maxRetries} attempts`);
+      process.exit(1);
+    }
   }
 };
+
+// Start server if this file is run directly (not imported as module)
+if (require.main === module) {
+  startServer();
+}
 
 module.exports = app;
 module.exports.startServer = startServer;
 
 // Production initialization
 if (process.env.NODE_ENV === 'production') {
-  connectDB().then(async () => {
-    console.log('✅ Database connected');
-    await seedDepartments().catch(() => { });
-    await seedSuperAdmin().catch(() => { });
-  }).catch(err => console.error('❌ DB connection failed:', err));
+  const initProduction = async (retryCount = 0) => {
+    const maxRetries = 3;
+    try {
+      await connectDB();
+      console.log('✅ Database connected');
+      await seedDepartments().catch(() => { });
+      await seedSuperAdmin().catch(() => { });
+    } catch (err) {
+      console.error('❌ DB connection failed:', err.message);
+      if (retryCount < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+        console.log(`Retrying database connection in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => initProduction(retryCount + 1), delay);
+      } else {
+        console.error(`Failed to connect to database after ${maxRetries} attempts in production`);
+        process.exit(1);
+      }
+    }
+  };
+  initProduction();
 }
 
 // Global error handlers

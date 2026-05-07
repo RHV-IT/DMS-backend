@@ -16,15 +16,18 @@ const connectDB = async () => {
 
   try {
     const conn = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 30000,
-      socketTimeoutMS: 45000,
+      serverSelectionTimeoutMS: 30000, // 30 seconds
+      socketTimeoutMS: 45000, // 45 seconds
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
+      family: 4, // Use IPv4, skip trying IPv6
     });
 
     console.log('MongoDB connected successfully');
     return conn;
   } catch (error) {
-    console.error('MongoDB connection failed');
-    process.exit(1);
+    console.error('MongoDB connection failed:', error.message);
+    throw error; // Re-throw to allow caller to handle
   }
 };
 
