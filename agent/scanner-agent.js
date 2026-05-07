@@ -20,7 +20,7 @@ const UPLOAD_DELAY_MS = 2000;
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 // Load API_BASE_URL from environment variables or config
-let API_BASE = process.env.API_BASE_URL || 'http://localhost:5000';
+let API_BASE = process.env.API_BASE_URL || 'https://rhv-dms-backend.vercel.app';
 if (fs.existsSync(CONFIG_PATH)) {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));

@@ -24,7 +24,7 @@ async function configure() {
 
   console.log('Configure the agent to connect to your server.\n');
 
-  const serverUrl = await askQuestion('Server URL (e.g. http://192.168.4.213:5000): ') || 'http://localhost:5000';
+  const serverUrl = await askQuestion('Server URL (e.g. http://192.168.4.213:5000): ') || 'https://rhv-dms-backend.vercel.app';
   const apiUrl = serverUrl.replace(/\/$/, '') + '/api/v1/scanner/pending';
 
   const config = {
