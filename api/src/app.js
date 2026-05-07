@@ -72,6 +72,7 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
   'http://192.168.2.53:3000',
   'http://192.168.7.13:3000',
+  'https://rhv-dms.vercel.app',
   '*'
 ];
 
