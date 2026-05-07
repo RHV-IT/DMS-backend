@@ -66,17 +66,28 @@ function loadConfig() {
     if (fs.existsSync(CONFIG_PATH)) {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 
+      // Handle both old and new config formats
+      // New format from simple installer
+      if (data.backendUrl) {
+        agentConfig.apiUrl = `${data.backendUrl}/api/v1/scanner/pending`;
+        agentConfig.token = data.token;
+        agentConfig.userId = data.userId;
+        agentConfig.userEmail = data.userEmail;
+        agentConfig.machineId = data.machineId;
+        authToken = data.token; // Set authToken for immediate use
+        LOCAL_PORT = data.port || 4001;
+      } else {
+        // Old format compatibility
+        agentConfig = {
+          ...agentConfig,
+          ...data
+        };
+        authToken = data.token; // Set authToken for old format too
+      }
+
       // Reconstruct Map and Set objects properly
       agentConfig.pendingUploads = new Map(data.pendingUploads || []);
       agentConfig.cancelledUploads = new Set(data.cancelledUploads || []);
-
-      // Copy other properties
-      agentConfig = {
-        ...agentConfig,
-        ...data,
-        pendingUploads: agentConfig.pendingUploads,
-        cancelledUploads: agentConfig.cancelledUploads
-      };
 
       // Generate machineId if not set
       if (!agentConfig.machineId) {
