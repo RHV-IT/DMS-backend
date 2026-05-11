@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const express = require('express');
+const cors = require('cors');
 const axios = require('axios');
 const FormData = require('form-data');
 const chokidar = require('chokidar');
@@ -112,6 +113,21 @@ function startLocalServer() {
   const expressApp = express();
   expressApp.use(express.json());
 
+  expressApp.use(cors({
+    origin: [
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "https://rhv-dms-frontend.vercel.app",
+      /^https:\/\/.*\.vercel\.app$/,
+      /^http:\/\/192\.168\.\d+\.\d+:3000$/
+    ],
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false
+  }));
+
+  expressApp.options("*", cors());
+
   // Health endpoint
   expressApp.get('/health', (req, res) => {
     res.json({
@@ -172,6 +188,18 @@ function startLocalServer() {
     } catch (error) {
       res.status(500).json({ success: false, message: 'Failed to load config' });
     }
+  });
+
+  // Get status endpoint
+  expressApp.get('/status', (req, res) => {
+    res.json({
+      running: true,
+      machineId,
+      scanDirectory: SCAN_DIR,
+      pendingUploads: pendingUploads.size,
+      version: app.getVersion(),
+      apiUrl: API_BASE_URL
+    });
   });
 
   server = expressApp.listen(LOCAL_PORT, '127.0.0.1', () => {
