@@ -107,6 +107,28 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.get('/cors-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS test successful',
+    origin: req.headers.origin,
+    userAgent: req.headers['user-agent'],
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Test endpoint for scanner pending without auth (for debugging)
+app.post('/api/v1/scanner/pending-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Pending test endpoint (no auth required)',
+    origin: req.headers.origin,
+    method: req.method,
+    headers: req.headers,
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.get('/', (req, res) => {
   res.json({ success: true, message: 'DMS API running', docs: '/api-docs' });
 });
