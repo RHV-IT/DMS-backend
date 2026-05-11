@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const swaggerUi = require('swagger-ui-express');
 const path = require('path');
@@ -12,76 +11,12 @@ const logger = require('./config/logger');
 const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
 const mongoose = require('mongoose');
 const adminController = require('./controllers/adminController');
-
-// ====================== CORS CONFIGURATION ======================
-const getAllowedOrigins = () => {
-  const origins = new Set();
-
-  // Add from ALLOWED_ORIGINS (highest priority)
-  if (process.env.ALLOWED_ORIGINS) {
-    process.env.ALLOWED_ORIGINS.split(',')
-      .map(o => o.trim())
-      .filter(Boolean)
-      .forEach(origin => origins.add(origin));
-  }
-
-  // Add FRONTEND_URL and CLIENT_URL
-  if (process.env.FRONTEND_URL) origins.add(process.env.FRONTEND_URL);
-  if (process.env.CLIENT_URL) origins.add(process.env.CLIENT_URL);
-
-  // Default fallbacks
-  const defaults = [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:5173',
-    'https://rhv-dms.vercel.app'
-  ];
-
-  defaults.forEach(origin => origins.add(origin));
-
-  return Array.from(origins);
-};
-
-const allowedOrigins = getAllowedOrigins();
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    // Development: Allow any localhost
-    if (process.env.NODE_ENV === 'development') {
-      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-        return callback(null, true);
-      }
-    }
-
-    // Production: Allow Vercel + epilux domains
-    if (process.env.NODE_ENV === 'production') {
-      if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin) ||
-        /^https?:\/\/([a-zA-Z0-9-]+\.)*epilux\.com\.ng$/.test(origin)) {
-        return callback(null, true);
-      }
-    }
-
-    console.warn(`❌ CORS blocked origin: ${origin}`);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Length', 'X-Total-Count']
-};
-// ================================================================
+const corsConfig = require('./config/cors');
 
 const app = express();
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.use(corsConfig);
+app.options('*', corsConfig);
 
 app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));

@@ -1,8 +1,8 @@
 // dependencies
 const express = require("express");
-const cors = require("cors");
 const checkAuth = require("./middlewares/cheackAuth");
 require("dotenv").config();
+const corsConfig = require("./src/config/cors");
 //middlewares
 const notFoundMiddleware = require("./middlewares/not-found");
 const serverErrorMiddleware = require("./middlewares/server-error");
@@ -15,51 +15,8 @@ const userRoutes = require("./routes/user.routes");
 const db = require("./database/documentRepository.db");
 const app = express();
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:5173',
-  'http://192.168.4.213:3000',
-  'http://192.168.2.53:3000'
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    try {
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        if (
-          /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
-          /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)
-        ) {
-          return callback(null, true);
-        }
-      }
-
-      if (process.env.NODE_ENV === 'production') {
-        if (/^https?:\/\/([a-zA-Z0-9-]+\.)*epilux\.com\.ng$/.test(origin)) {
-          return callback(null, true);
-        }
-      }
-
-      return callback(new Error('Not allowed by CORS'));
-    } catch (err) {
-      return callback(err);
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.use(corsConfig);
+app.options('*', corsConfig);
 app.use(express.json({ limit: "50mb" }));
 
 // middleware to parse incoming request bodies

@@ -99,7 +99,51 @@ function startAgentServer() {
   const axios = require('axios');
 
   const server = express();
-  server.use(cors());
+
+  // CORS configuration for agent localhost server
+  const agentCorsOptions = {
+    origin: function (origin, callback) {
+      // Allow requests with no origin (direct API calls, Postman, etc.)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "https://rhv-dms.vercel.app"
+      ];
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow any localhost port in development
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow local network addresses
+      if (/^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow Vercel domains
+      if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      console.error("❌ Agent CORS blocked origin:", origin);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: false,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    optionsSuccessStatus: 200
+  };
+
+  server.use(cors(agentCorsOptions));
+  server.options("*", cors(agentCorsOptions));
   server.use(express.json());
 
   const config = loadConfig();

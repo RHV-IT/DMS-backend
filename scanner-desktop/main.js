@@ -113,20 +113,51 @@ function startLocalServer() {
   const expressApp = express();
   expressApp.use(express.json());
 
-  expressApp.use(cors({
-    origin: [
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "https://rhv-dms-frontend.vercel.app",
-      /^https:\/\/.*\.vercel\.app$/,
-      /^http:\/\/192\.168\.\d+\.\d+:3000$/
-    ],
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false
-  }));
+  // CORS configuration for scanner localhost server
+  const scannerCorsOptions = {
+    origin: function (origin, callback) {
+      // Allow requests with no origin (direct API calls, Postman, etc.)
+      if (!origin) return callback(null, true);
 
-  expressApp.options("*", cors());
+      const allowedOrigins = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "https://rhv-dms.vercel.app",
+        "https://rhv-dms-frontend.vercel.app"
+      ];
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow any localhost port in development
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow local network addresses
+      if (/^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow Vercel domains
+      if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      console.error("❌ Scanner CORS blocked origin:", origin);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: false, // No credentials needed for scanner API
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    optionsSuccessStatus: 200
+  };
+
+  expressApp.use(cors(scannerCorsOptions));
+  expressApp.options("*", cors(scannerCorsOptions));
 
   // Health endpoint
   expressApp.get('/health', (req, res) => {

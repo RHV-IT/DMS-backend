@@ -408,24 +408,51 @@ function parseBody(req) {
   });
 }
 
-function sendJson(res, statusCode, data) {
-  res.writeHead(statusCode, {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
+function getCorsHeaders(origin) {
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
+    'https://rhv-dms.vercel.app',
+    'https://rhv-dms-backend.vercel.app'
+  ];
+
+  let allowOrigin = 'https://rhv-dms.vercel.app'; // Default fallback
+
+  if (!origin || allowedOrigins.includes(origin)) {
+    allowOrigin = origin || 'https://rhv-dms.vercel.app';
+  } else if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    allowOrigin = origin;
+  } else if (/^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin)) {
+    allowOrigin = origin;
+  } else if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin)) {
+    allowOrigin = origin;
+  }
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
     'Access-Control-Max-Age': '86400'
-  });
+  };
+}
+
+function sendJson(res, statusCode, data, origin) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...getCorsHeaders(origin)
+  };
+  res.writeHead(statusCode, headers);
   res.end(JSON.stringify(data));
 }
 
 function handleOptions(req, res) {
-  res.writeHead(204, {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Max-Age': '86400'
-  });
+  const origin = req.headers.origin;
+  const headers = {
+    ...getCorsHeaders(origin)
+  };
+  res.writeHead(204, headers);
   res.end();
 }
 
@@ -439,7 +466,7 @@ async function handleRequest(req, res) {
     }
     if (pathname === '/set-token' && req.method === 'POST') {
       const body = await parseBody(req);
-      if (!body.token) return sendJson(res, 400, { success: false, message: 'Token required' });
+      if (!body.token) return sendJson(res, 400, { success: false, message: 'Token required' }, req.headers.origin);
       saveConfig({
         token: body.token,
         userId: body.userId,
@@ -447,22 +474,22 @@ async function handleRequest(req, res) {
         apiBaseUrl: API_BASE
       });
       log('Authenticated as ' + (body.userEmail || agentConfig.userEmail || 'user'), 'SUCCESS');
-      return sendJson(res, 200, { success: true, message: 'Token set', userId: agentConfig.userId });
+      return sendJson(res, 200, { success: true, message: 'Token set', userId: agentConfig.userId }, req.headers.origin);
     }
     if (pathname === '/delete-file' && req.method === 'POST') {
       const body = await parseBody(req);
-      if (!body.filePath) return sendJson(res, 400, { success: false, message: 'filePath required' });
+      if (!body.filePath) return sendJson(res, 400, { success: false, message: 'filePath required' }, req.headers.origin);
       let fileToDelete = path.isAbsolute(body.filePath) ? body.filePath : path.join(SCAN_DIR, body.filePath);
       try {
         if (fs.existsSync(fileToDelete)) {
           fs.unlinkSync(fileToDelete);
           log('Deleted: ' + path.basename(fileToDelete), 'SUCCESS');
-          return sendJson(res, 200, { success: true, message: 'File deleted', filePath: fileToDelete });
+          return sendJson(res, 200, { success: true, message: 'File deleted', filePath: fileToDelete }, req.headers.origin);
         }
-        return sendJson(res, 404, { success: false, message: 'File not found' });
+        return sendJson(res, 404, { success: false, message: 'File not found' }, req.headers.origin);
       } catch (err) {
         log('Delete error: ' + err.message, 'ERROR');
-        return sendJson(res, 500, { success: false, message: err.message });
+        return sendJson(res, 500, { success: false, message: err.message }, req.headers.origin);
       }
     }
     if (pathname === '/status' && req.method === 'GET') {
@@ -473,13 +500,13 @@ async function handleRequest(req, res) {
         apiUrl: API_BASE,
         scanPath: SCAN_DIR,
         hasToken: !!agentConfig.token
-      });
+      }, req.headers.origin);
     }
-    if (pathname === '/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' });
-    sendJson(res, 404, { success: false, message: 'Not found' });
+    if (pathname === '/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' }, req.headers.origin);
+    sendJson(res, 404, { success: false, message: 'Not found' }, req.headers.origin);
   } catch (err) {
     log('Request error: ' + err.message, 'ERROR');
-    sendJson(res, 500, { success: false, message: err.message });
+    sendJson(res, 500, { success: false, message: err.message }, req.headers.origin);
   }
 }
 
