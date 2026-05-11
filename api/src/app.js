@@ -66,6 +66,26 @@ app.use('/api/v1/scanner', scannerRoutes);
 app.use('/api/v1/scanner', pendingScanRoutes);
 app.use('/api/v1/agent', agentRoutes);
 
+// MANUAL CORS FIX FOR SCANNER ENDPOINTS
+app.use('/api/v1/scanner', (req, res, next) => {
+  const allowedOrigins = ['https://rhv-dms.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+
+  next();
+});
+
 app.get('/api/v1/config/confidentiality-levels', (req, res) => {
   res.json({
     success: true, data: [

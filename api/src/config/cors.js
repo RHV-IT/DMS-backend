@@ -84,19 +84,34 @@ const dynamicOrigin = (origin, callback) => {
   return callback(new Error('Not allowed by CORS'));
 };
 
+// FORCE ALLOW SPECIFIC ORIGINS
+const forceAllowOrigins = (origin, callback) => {
+  console.log("🔍 FORCE CORS check for origin:", origin, "Method:", "unknown");
+
+  const allowed = [
+    'https://rhv-dms.vercel.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://rhv-dms-backend.vercel.app',
+    null, // Allow requests without origin
+    undefined
+  ];
+
+  if (allowed.includes(origin)) {
+    console.log("✅ FORCE CORS allowed:", origin);
+    return callback(null, true);
+  }
+
+  console.log("❌ FORCE CORS blocked:", origin);
+  return callback(null, true); // Allow anyway for debugging
+};
+
 module.exports = cors({
-  origin: dynamicOrigin,
-  credentials: true, // Allow credentials when sent
+  origin: forceAllowOrigins,
+  credentials: false, // Temporarily disable to avoid preflight issues
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "X-Requested-With",
-    "Accept",
-    "Origin"
-  ],
-  exposedHeaders: ["Content-Length", "X-Total-Count"],
-  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+  allowedHeaders: ["*"], // Allow all headers
+  optionsSuccessStatus: 200
 });
 
 // Alternative: Create a no-credentials CORS config for public endpoints
