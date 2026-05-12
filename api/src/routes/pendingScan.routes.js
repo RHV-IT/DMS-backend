@@ -1,10 +1,59 @@
 const express = require('express');
 const router = express.Router();
 const pendingScanController = require('../controllers/pendingScanController');
+const PendingScan = require('../models/PendingScan');
 const auth = require('../middlewares/authMiddleware');
 const { handleScannedUpload } = require('../middlewares/uploadMiddleware');
 
-// All routes require authentication
+// Debug endpoint to list all pending scans (public - no auth required)
+router.get('/pending-all', async (req, res) => {
+  try {
+    const scans = await PendingScan.find({ status: 'pending' })
+      .populate('assignedTo', 'name email')
+      .populate('confirmedBy', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    res.json({
+      success: true,
+      data: scans,
+      count: scans.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pending scans',
+      error: error.message
+    });
+  }
+});
+
+// Public endpoint to check pending scans count (no auth required)
+router.get('/pending-public', async (req, res) => {
+  try {
+    const count = await PendingScan.countDocuments({ status: 'pending' });
+    const scans = await PendingScan.find({ status: 'pending' })
+      .select('id originalName machineId department createdAt')
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    res.json({
+      success: true,
+      data: {
+        count,
+        recent: scans
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pending scans count',
+      error: error.message
+    });
+  }
+});
+
+// All routes below require authentication
 router.use(auth);
 
 /**
@@ -43,39 +92,5 @@ router.delete('/pending/:id', pendingScanController.deletePendingScan);
 
 // Stats
 router.get('/pending/stats', pendingScanController.getPendingStats);
-
-// Serve permanent pending files
-router.get('/pending-file/:filename', (req, res) => {
-  const { filename } = req.params;
-  const filePath = path.join(PENDING_UPLOAD_PATH, filename);
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ success: false, message: 'Pending file not found' });
-  }
-
-  // Set appropriate headers and stream the file
-  const stat = fs.statSync(filePath);
-  res.setHeader('Content-Length', stat.size);
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
-  const fileStream = fs.createReadStream(filePath);
-  fileStream.pipe(res);
-});
-
-// Debug endpoint to list all pending scans (bypass filter)
-router.get('/pending-all', async (req, res) => {
-
-  const scans = await PendingScan.find({ status: 'pending' })
-    .populate('assignedTo', 'name email')
-    .populate('confirmedBy', 'name email')
-    .sort({ createdAt: -1 })
-    .limit(50);
-
-  res.json({
-    success: true,
-    data: scans
-  });
-});
 
 module.exports = router;
