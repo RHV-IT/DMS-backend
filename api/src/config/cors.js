@@ -24,7 +24,8 @@ const getAllowedOrigins = () => {
     'http://127.0.0.1:3000',
     'http://127.0.0.1:5173',
     'https://rhv-dms.vercel.app',
-    'https://rhv-dms-backend.vercel.app'
+    'https://rhv-dms-backend.vercel.app',
+    'http://192.168.8.216:3000'
   ];
 
   defaults.forEach(origin => origins.add(origin));
@@ -65,7 +66,7 @@ const dynamicOrigin = (origin, callback) => {
   // Development: Allow any localhost/network addresses
   if (process.env.NODE_ENV === 'development') {
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
-        /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin)) {
+      /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin)) {
       console.log("✅ CORS allowed: development pattern:", origin);
       return callback(null, true);
     }
@@ -74,7 +75,7 @@ const dynamicOrigin = (origin, callback) => {
   // Production: Allow Vercel domains and specific patterns
   if (process.env.NODE_ENV === 'production') {
     if (/^https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin) ||
-        /^https?:\/\/([a-zA-Z0-9-]+\.)*epilux\.com\.ng$/.test(origin)) {
+      /^https?:\/\/([a-zA-Z0-9-]+\.)*epilux\.com\.ng$/.test(origin)) {
       console.log("✅ CORS allowed: production pattern:", origin);
       return callback(null, true);
     }
