@@ -114,30 +114,100 @@ const scannerController = {
         });
       }
 
-      // Move file to permanent storage immediately
+      // Copy file to permanent storage (safer than move on Windows)
       const permanentFilename = `${uuidv4()}-${fileName}`;
-      const permanentFilePath = path.join(PENDING_UPLOAD_PATH, permanentFilename);
+      const permanentFilePath = path.resolve(PENDING_UPLOAD_PATH, permanentFilename);
+      const tempFilePath = path.resolve(req.file.path);
 
-      try {
-        await fs.promises.rename(req.file.path, permanentFilePath);
-        console.log('[SCANNER UPLOAD] Moved to permanent storage:', permanentFilePath);
-      } catch (moveErr) {
-        console.error('[SCANNER UPLOAD] Failed to move to permanent storage:', moveErr.message);
-        // Fallback: copy instead of move
+      console.log('[SCANNER UPLOAD] Attempting to store file permanently');
+      console.log('[SCANNER UPLOAD] Temp file path:', tempFilePath);
+      console.log('[SCANNER UPLOAD] Permanent file path:', permanentFilePath);
+      console.log('[SCANNER UPLOAD] PENDING_UPLOAD_PATH:', PENDING_UPLOAD_PATH);
+      console.log('[SCANNER UPLOAD] process.cwd():', process.cwd());
+      console.log('[SCANNER UPLOAD] Platform:', process.platform);
+
+      // Ensure pending-uploads directory exists
+      const pendingDirExists = fs.existsSync(PENDING_UPLOAD_PATH);
+      console.log('[SCANNER UPLOAD] pending-uploads directory exists:', pendingDirExists);
+
+      if (!pendingDirExists) {
+        console.log('[SCANNER UPLOAD] Creating pending-uploads directory');
         try {
-          await fs.promises.copyFile(req.file.path, permanentFilePath);
-          await fs.promises.unlink(req.file.path);
-          console.log('[SCANNER UPLOAD] Copied to permanent storage:', permanentFilePath);
-        } catch (copyErr) {
-          console.error('[SCANNER UPLOAD] Failed to copy to permanent storage:', copyErr.message);
-          throw new Error('Failed to store file permanently');
+          fs.mkdirSync(PENDING_UPLOAD_PATH, { recursive: true });
+          console.log('[SCANNER UPLOAD] Created pending-uploads directory');
+        } catch (mkdirErr) {
+          console.error('[SCANNER UPLOAD] Failed to create pending-uploads directory:', mkdirErr.message);
+          throw new Error('Failed to create storage directory');
         }
+      }
+
+      // Verify temp file exists and is readable
+      const tempFileExists = fs.existsSync(tempFilePath);
+      console.log('[SCANNER UPLOAD] Temp file exists:', tempFileExists);
+
+      if (!tempFileExists) {
+        console.error('[SCANNER UPLOAD] Temp file does not exist:', tempFilePath);
+        throw new Error('Temporary file not found');
+      }
+
+      // Add small delay to ensure file is fully written (Windows file locking issue)
+      console.log('[SCANNER UPLOAD] Waiting 100ms for file to be fully written...');
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Attempt to copy file to permanent storage
+      try {
+        console.log('[SCANNER UPLOAD] Copying file to permanent storage...');
+        await fs.promises.copyFile(tempFilePath, permanentFilePath);
+        console.log('[SCANNER UPLOAD] Copy completed successfully');
+
+        // Verify the copy worked
+        const permanentExists = fs.existsSync(permanentFilePath);
+        console.log('[SCANNER UPLOAD] Permanent file exists after copy:', permanentExists);
+
+        if (!permanentExists) {
+          throw new Error('File copy completed but destination file not found');
+        }
+
+        // Verify file sizes match
+        const tempStats = fs.statSync(tempFilePath);
+        const permanentStats = fs.statSync(permanentFilePath);
+        console.log('[SCANNER UPLOAD] Temp file size:', tempStats.size);
+        console.log('[SCANNER UPLOAD] Permanent file size:', permanentStats.size);
+
+        if (tempStats.size !== permanentStats.size) {
+          throw new Error(`File size mismatch: temp=${tempStats.size}, permanent=${permanentStats.size}`);
+        }
+
+        // Now safe to remove temp file
+        console.log('[SCANNER UPLOAD] Removing temp file...');
+        await fs.promises.unlink(tempFilePath);
+        console.log('[SCANNER UPLOAD] Temp file removed successfully');
+
+      } catch (copyErr) {
+        console.error('[SCANNER UPLOAD] Failed to copy file to permanent storage:', copyErr.message);
+        console.error('[SCANNER UPLOAD] Copy error details:', copyErr);
+
+        // Log more diagnostic information
+        try {
+          const dirStats = fs.statSync(PENDING_UPLOAD_PATH);
+          console.log('[SCANNER UPLOAD] Directory stats:', {
+            mode: dirStats.mode,
+            uid: dirStats.uid,
+            gid: dirStats.gid,
+            size: dirStats.size,
+            isDirectory: dirStats.isDirectory()
+          });
+        } catch (dirErr) {
+          console.error('[SCANNER UPLOAD] Failed to stat directory:', dirErr.message);
+        }
+
+        throw new Error('Failed to store file permanently');
       }
 
       // Create PendingScan record with permanent paths
       const pendingScan = await PendingScan.create({
         id: uuidv4().replace(/-/g, '').toUpperCase(),
-        filePath: req.file.path, // Keep original temp path for cleanup
+        filePath: tempFilePath, // Store the original temp path (though file is now moved)
         permanentFilePath,
         permanentFileUrl: `/api/v1/scanner/pending-file/${path.basename(permanentFilePath)}`,
         originalName: fileName,

@@ -239,8 +239,8 @@ async function uploadFile(filePath) {
     const response = await axios.post(`${API_BASE}/api/v1/scanner/pending`, formData, {
       headers: {
         ...formData.getHeaders(),
-        Authorization: `Bearer ${SCANNER_TOKEN}`,
-        'x-machine-id': config.machineId || 'unknown',
+        Authorization: `Bearer ${authToken}`,
+        'x-machine-id': agentConfig.machineId || 'unknown',
         'x-machine-name': os.hostname(),
         'x-hostname': os.hostname(),
         'x-platform': os.platform(),
