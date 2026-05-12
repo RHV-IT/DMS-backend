@@ -14,7 +14,8 @@ const { v4: uuidv4 } = require('uuid');
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 const UPLOAD_PATH = process.env.UPLOAD_PATH || path.join(os.tmpdir(), 'uploads');
 // Permanent storage for pending scans (survives serverless restarts)
-const PENDING_UPLOAD_PATH = process.env.PENDING_UPLOAD_PATH || path.join(process.cwd(), 'pending-uploads');
+// Use a subdirectory of the temp uploads directory for consistency
+let PENDING_UPLOAD_PATH = process.env.PENDING_UPLOAD_PATH || path.join(UPLOAD_PATH, 'pending');
 
 /**
  * Generate a stable file fingerprint for deduplication
@@ -37,16 +38,47 @@ function generateFileFingerprint(filePath, fileName, fileSize, machineId) {
   }
 }
 
-// Ensure upload directories exist
+// Ensure upload directories exist with better error handling
 try {
+  console.log('[INIT] Ensuring upload directories exist');
+  console.log('[INIT] UPLOAD_PATH:', UPLOAD_PATH);
+  console.log('[INIT] PENDING_UPLOAD_PATH:', PENDING_UPLOAD_PATH);
+
   if (!fs.existsSync(UPLOAD_PATH)) {
     fs.mkdirSync(UPLOAD_PATH, { recursive: true });
+    console.log('[INIT] Created UPLOAD_PATH:', UPLOAD_PATH);
+  } else {
+    console.log('[INIT] UPLOAD_PATH already exists:', UPLOAD_PATH);
   }
-  if (!fs.existsSync(PENDING_UPLOAD_PATH)) {
-    fs.mkdirSync(PENDING_UPLOAD_PATH, { recursive: true });
+
+  // Always try to create pending directory (it's a subdirectory)
+  try {
+    if (!fs.existsSync(PENDING_UPLOAD_PATH)) {
+      fs.mkdirSync(PENDING_UPLOAD_PATH, { recursive: true });
+      console.log('[INIT] Created PENDING_UPLOAD_PATH:', PENDING_UPLOAD_PATH);
+    } else {
+      console.log('[INIT] PENDING_UPLOAD_PATH already exists:', PENDING_UPLOAD_PATH);
+    }
+  } catch (pendingError) {
+    console.error('[INIT] Could not create pending upload directory:', pendingError.message);
+    // Try fallback to temp directory
+    const fallbackPendingPath = path.join(os.tmpdir(), 'dms-pending-uploads');
+    console.log('[INIT] Trying fallback pending path:', fallbackPendingPath);
+    try {
+      if (!fs.existsSync(fallbackPendingPath)) {
+        fs.mkdirSync(fallbackPendingPath, { recursive: true });
+        console.log('[INIT] Created fallback PENDING_UPLOAD_PATH:', fallbackPendingPath);
+      }
+      // Update the constant (this will affect the module-level variable)
+      // Note: In Node.js, this will update the reference for subsequent uses
+      PENDING_UPLOAD_PATH = fallbackPendingPath;
+    } catch (fallbackError) {
+      console.error('[INIT] Fallback pending directory creation also failed:', fallbackError.message);
+    }
   }
 } catch (error) {
-  console.warn('Could not create upload directories:', error.message);
+  console.error('[INIT] Could not create upload directories:', error.message);
+  console.error('[INIT] This may cause upload failures later');
   // Continue execution - directories might already exist or be accessible
 }
 
@@ -126,18 +158,34 @@ const scannerController = {
       console.log('[SCANNER UPLOAD] process.cwd():', process.cwd());
       console.log('[SCANNER UPLOAD] Platform:', process.platform);
 
-      // Ensure pending-uploads directory exists
-      const pendingDirExists = fs.existsSync(PENDING_UPLOAD_PATH);
-      console.log('[SCANNER UPLOAD] pending-uploads directory exists:', pendingDirExists);
+      // Ensure pending-uploads directory exists with robust error handling
+      console.log('[SCANNER UPLOAD] Checking PENDING_UPLOAD_PATH:', PENDING_UPLOAD_PATH);
+      console.log('[SCANNER UPLOAD] Current working directory:', process.cwd());
+      console.log('[SCANNER UPLOAD] Platform:', process.platform);
 
-      if (!pendingDirExists) {
-        console.log('[SCANNER UPLOAD] Creating pending-uploads directory');
+      // Ensure the pending directory exists
+      console.log('[SCANNER UPLOAD] Ensuring pending directory exists:', PENDING_UPLOAD_PATH);
+
+      try {
+        // Try to create the directory (recursive will handle parent directories)
+        fs.mkdirSync(PENDING_UPLOAD_PATH, { recursive: true });
+        console.log('[SCANNER UPLOAD] Pending directory ready');
+      } catch (mkdirErr) {
+        console.error('[SCANNER UPLOAD] Failed to create pending directory:', mkdirErr.message);
+
+        // Try fallback directory in temp
+        const fallbackPath = path.join(os.tmpdir(), 'dms-pending-uploads-' + Date.now());
+        console.log('[SCANNER UPLOAD] Trying fallback path:', fallbackPath);
+
         try {
-          fs.mkdirSync(PENDING_UPLOAD_PATH, { recursive: true });
-          console.log('[SCANNER UPLOAD] Created pending-uploads directory');
-        } catch (mkdirErr) {
-          console.error('[SCANNER UPLOAD] Failed to create pending-uploads directory:', mkdirErr.message);
-          throw new Error('Failed to create storage directory');
+          fs.mkdirSync(fallbackPath, { recursive: true });
+          console.log('[SCANNER UPLOAD] Created fallback directory');
+          PENDING_UPLOAD_PATH = fallbackPath;
+          console.log('[SCANNER UPLOAD] Using fallback path for this upload');
+        } catch (fallbackErr) {
+          console.error('[SCANNER UPLOAD] Fallback directory creation failed:', fallbackErr.message);
+          // Don't throw error, try to proceed with current path
+          console.log('[SCANNER UPLOAD] Proceeding with current path despite mkdir failure');
         }
       }
 
