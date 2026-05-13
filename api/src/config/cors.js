@@ -28,6 +28,7 @@ const getAllowedOrigins = () => {
 
     // Local network IPs (common ranges)
     'http://192.168.0.153:3000',    // User's specific IP
+     'http://192.168.0.1:3000',     // Local network IP
     'http://192.168.8.216:3000',    // Previously configured
     'http://192.168.1.100:3000',    // Common local IP
     'http://192.168.0.100:3000',    // Common local IP
@@ -75,7 +76,7 @@ const validateOrigin = (origin, callback) => {
        /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,            // 192.168.x.x
        /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/,             // 10.x.x.x
        /^https?:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+(:\d+)?$/,  // 172.16-31.x.x
-       /^https?:\/\/([a-zA-Z0-9-]+\.)*rhv$/                // .rhv hostnames
+       /^https?:\/\/([a-zA-Z0-9-]+\.)*rhv(:\d+)?$/                // .rhv hostnames
      ];
 
     for (const pattern of localPatterns) {
