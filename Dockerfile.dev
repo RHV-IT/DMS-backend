@@ -1,0 +1,23 @@
+# Dockerfile.dev - Development Dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY api/package.json api/package-lock.json* ./api/
+RUN cd api && npm ci
+
+# Copy source code
+COPY . .
+
+# Create directories
+RUN mkdir -p /app/uploads /app/pending-uploads /app/logs
+
+# Expose ports
+EXPOSE 5000
+
+# Development command
+CMD ["npm", "run", "dev"]

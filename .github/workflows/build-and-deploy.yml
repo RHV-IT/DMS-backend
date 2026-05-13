@@ -184,7 +184,7 @@ jobs:
 
       # ---- Option B: Trigger a webhook / deployment pipeline ----
       - name: Trigger deployment webhook
-        if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' }}
+        if: secrets.DEPLOY_WEBHOOK_URL != ''
         run: |
           curl -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \

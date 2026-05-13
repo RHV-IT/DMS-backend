@@ -1,0 +1,37 @@
+# docker-compose.override.yml - Development Overrides
+# This file is automatically merged with docker-compose.yml in development
+# It provides development-specific configuration
+
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    volumes:
+      # Mount source code for hot reloading
+      - ./api:/app/api
+      - /app/api/node_modules
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+    command: ["npm", "run", "dev"]
+
+  watcher:
+    volumes:
+      - ./watcher:/app/watcher
+      - /app/watcher/node_modules
+    command: ["npm", "run", "dev"]
+
+  scanner-agent:
+    volumes:
+      - ./agent:/app/agent
+      - /app/agent/node_modules
+    command: ["npm", "run", "dev"]
+
+  # Disable nginx in development (use direct API access)
+  nginx:
+    profiles:
+      - production
