@@ -72,7 +72,7 @@ const errorHandler = (err, req, res, next) => {
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD");
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-Client-Type, X-Machine-Id, X-Machine-Name, X-Hostname, X-Platform, X-Source"
+      "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-browser, x-device, x-client-type"
     );
     res.setHeader("Access-Control-Expose-Headers", "Content-Length, X-Total-Count, X-File-Size, X-Auth-Token, X-Request-Id");
     res.setHeader("Access-Control-Max-Age", "600");

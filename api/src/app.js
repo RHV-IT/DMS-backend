@@ -27,27 +27,8 @@ const app = express();
 app.use(corsConfig);
 
 // [2] EXPLICIT OPTIONS HANDLER - SAFETY NET
-// Ensures preflight requests are ALWAYS handled, even if cors() middleware has issues
-app.options("*", (req, res) => {
-  const origin = req.headers.origin;
-  logger.info(`[OPTIONS:${Math.random().toString(36).substring(2,8)}] Preflight: ${origin || 'none'} → ${req.path}`);
-
-  // Always set CORS headers for preflight responses
-  if (origin) {
-    res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD");
-    res.setHeader("Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-Client-Type, X-Machine-Id, X-Machine-Name, X-Hostname, X-Platform, X-Source"
-    );
-    res.setHeader("Access-Control-Expose-Headers", "Content-Length, X-Total-Count, X-File-Size, X-Auth-Token, X-Request-Id");
-    res.setHeader("Access-Control-Max-Age", "600");
-  }
-
-  // Return 200 OK for preflight (more compatible than 204)
-  res.status(200).end();
-});
+// Ensures preflight requests are ALWAYS handled with CORS
+app.options("*", cors(corsConfig.corsOptions));
 
 // [3] COOKIE PARSER - Must come before auth middleware
 app.use(cookieParser());
@@ -62,6 +43,11 @@ app.use((req, res, next) => {
   const origin = req.headers.origin || 'none';
 
   logger.info(`[${req.method}:${requestId}] ${req.path} - Origin: ${origin}`);
+
+  // CORS DEBUG LOGGING - Show all request details
+  console.log("Origin:", req.headers.origin);
+  console.log("Method:", req.method);
+  console.log("Headers:", req.headers);
 
   // Log auth-related headers for debugging
   if (req.headers.authorization) {
@@ -79,8 +65,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// [6] CORS SAFETY NET - Ensures CORS headers on ALL responses
-app.use(ensureCorsHeaders);
+// [6] CORS SAFETY NET - REMOVED: Main CORS middleware now handles everything properly
 
 // [7] Database connection middleware - ensures DB is connected for API routes
 app.use("/api", ensureConnected);
