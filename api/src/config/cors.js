@@ -25,7 +25,8 @@ const getAllowedOrigins = () => {
     'http://127.0.0.1:5173',
     'https://rhv-dms.vercel.app',
     'https://rhv-dms-backend.vercel.app',
-    'http://192.168.8.216:3000'
+    'http://192.168.8.216:3000',
+    'http://192.168.0.153:3000',
   ];
 
   defaults.forEach(origin => origins.add(origin));

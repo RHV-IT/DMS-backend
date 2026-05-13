@@ -115,7 +115,7 @@ router.get('/config-download', (req, res) => {
   const baseUrl = `${req.protocol}://${req.get('host')}`;
 
   const config = {
-    apiUrl: `${baseUrl}/api/v1/scanner/pending`,
+    apiUrl: `${baseUrl}/api/v1/scanner/upload`,
     token: req.token,
     userId: user._id.toString(),
     userEmail: user.email,
@@ -145,7 +145,7 @@ REM Set server URL to Vercel (no user input for security)
 set SERVER_URL=https://rhv-dms-backend.vercel.app
 
 REM Build API URL
-set API_URL=%SERVER_URL%/api/v1/scanner/pending
+set API_URL=%SERVER_URL%/api/v1/scanner/upload
 
 REM Create config.json with null token
 echo Creating config.json...

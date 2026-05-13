@@ -48,7 +48,7 @@ let agentConfig = {
   userId: null,
   userEmail: null,
   machineId: null,
-  apiUrl: `${API_BASE}/api/v1/scanner/pending`,
+  apiUrl: `${API_BASE}/api/v1/scanner/upload`,
   pendingUploads: new Map(),
   cancelledUploads: new Set()
 };
@@ -280,7 +280,7 @@ async function uploadFile(filePath) {
     formData.append('file', fileBuffer, { filename: fileName, contentType: getMimeType(fileName) });
     formData.append('machineId', machineId);
 
-    const response = await axios.post(`${API_BASE}/api/v1/scanner/pending`, formData, {
+    const response = await axios.post(`${API_BASE}/api/v1/scanner/upload`, formData, {
       headers: {
         ...formData.getHeaders(),
         Authorization: `Bearer ${agentConfig.token}`,
@@ -293,19 +293,14 @@ async function uploadFile(filePath) {
       timeout: 60000, maxContentLength: Infinity, maxBodyLength: Infinity
     });
     if (response.data?.success) {
-      log('Pending upload: ' + fileName, 'SUCCESS');
+      log('Direct upload completed: ' + fileName, 'SUCCESS');
 
-      // DO NOT delete file immediately - wait for confirmation
-      // Add to pending uploads tracking
-      const pendingId = response.data?.data?.id;
-      if (pendingId) {
-        agentConfig.pendingUploads.set(pendingId, {
-          filePath,
-          fileName,
-          uploadedAt: new Date().toISOString(),
-          machineId: agentConfig.machineId
-        });
-        saveConfig(agentConfig);
+      // Delete the local file immediately since upload was successful
+      try {
+        fs.unlinkSync(filePath);
+        log(`Deleted local file: ${fileName}`);
+      } catch (deleteErr) {
+        log(`Failed to delete local file: ${fileName} - ${deleteErr.message}`, 'WARNING');
       }
 
       return { success: true, data: response.data.data, filePath: filePath };

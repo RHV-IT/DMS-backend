@@ -26,18 +26,17 @@ const fileController = {
       const { alias, tags, confidentialityLevel } = req.body;
       const user = req.user;
 
-      const fileLevel = confidentialityLevel || 'internal';
-      const userLevelIndex = getLevelIndex(user.confidentialityLevel);
-      const fileLevelIndex = getLevelIndex(fileLevel);
+const userLevels = user.confidentialityLevels || ['public'];
+       const fileLevel = confidentialityLevel || 'internal';
 
-      if (fileLevelIndex > userLevelIndex) {
-        return res.status(403).json({
-          success: false,
-          message: 'Not authorized to create files at this confidentiality level'
-        });
-      }
+       if (!userLevels.includes(fileLevel)) {
+         return res.status(403).json({
+           success: false,
+           message: 'Not authorized to create files at this confidentiality level'
+         });
+       }
 
-      const file = await File.create({
+       const file = await File.create({
         name: req.file.originalname,
         alias: alias || req.file.originalname,
         type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
@@ -84,18 +83,17 @@ const fileController = {
         return res.status(400).json({ success: false, message: 'No files uploaded' });
       }
 
-      const { confidentialityLevel } = req.body;
-      const user = req.user;
-      const fileLevel = confidentialityLevel || 'internal';
-      const userLevelIndex = getLevelIndex(user.confidentialityLevel);
-      const fileLevelIndex = getLevelIndex(fileLevel);
+const { confidentialityLevel } = req.body;
+       const user = req.user;
+       const fileLevel = confidentialityLevel || 'internal';
+       const userLevels = user.confidentialityLevels || ['public'];
 
-      if (fileLevelIndex > userLevelIndex) {
-        return res.status(403).json({
-          success: false,
-          message: 'Not authorized to create files at this confidentiality level'
-        });
-      }
+       if (!userLevels.includes(fileLevel)) {
+         return res.status(403).json({
+           success: false,
+           message: 'Not authorized to create files at this confidentiality level'
+         });
+       }
 
       const files = [];
 
@@ -310,15 +308,14 @@ const fileController = {
         });
         const sharedFileIds = sharedPermissions.map(p => p.fileId);
 
-        const userLevelIndex = getLevelIndex(user.confidentialityLevel);
+        const userLevels = user.confidentialityLevels || ['public'];
 
         // Separate search $or from other filters
         const searchOrClauses = baseFilter.$or || [];
         const { $or: _, ...staticFilters } = baseFilter; // remove $or from static filters
 
-        // Add confidentiality level filter
-        const allowedLevels = CONFIDENTIALITY_LEVELS.slice(0, userLevelIndex + 1);
-        staticFilters.confidentialityLevel = { $in: allowedLevels };
+        // Add confidentiality level filter - user can only see files at levels they have access to
+        staticFilters.confidentialityLevel = { $in: userLevels };
 
         // Build final query
         let finalQuery;

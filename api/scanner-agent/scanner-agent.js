@@ -18,7 +18,7 @@ try {
 // Configuration
 const API_BASE_URL = process.env.API_BASE_URL || 'https://rhv-dms-backend.vercel.app';
 const SCAN_DIR = path.join(os.homedir(), 'Documents', 'Scan');
-const PENDING_API_URL = `${API_BASE_URL}/api/v1/scanner/pending`;
+const UPLOAD_API_URL = `${API_BASE_URL}/api/v1/scanner/upload`;
 const CANCELLED_SCANS_PATH = path.join(__dirname, 'cancelled-scans.json');
 const SCANNER_TOKEN = config.token;
 const UPLOAD_DELAY_MS = 2000;
@@ -33,7 +33,7 @@ console.log('Initial cancelledUploads type:', cancelledUploads.constructor.name)
 console.log('Initial pendingUploads type:', pendingUploads.constructor.name);
 
 console.log('Backend API:', API_BASE_URL);
-console.log('Pending API:', PENDING_API_URL);
+console.log('Upload API:', UPLOAD_API_URL);
 
 // Validate config
 if (!SCANNER_TOKEN) {
@@ -62,7 +62,7 @@ const sendToPending = async (filePath) => {
 
     console.log(`Uploading: ${fileName}`);
 
-    const response = await axios.post(PENDING_API_URL, formData, {
+    const response = await axios.post(UPLOAD_API_URL, formData, {
       headers: {
         ...formData.getHeaders(),
         'Authorization': `Bearer ${SCANNER_TOKEN}`,
@@ -78,18 +78,14 @@ const sendToPending = async (filePath) => {
     });
 
     if (response.data && response.data.success) {
-      console.log(`✓ Pending upload: ${fileName}`);
+      console.log(`✓ Direct upload completed: ${fileName}`);
 
-      // DO NOT delete file immediately - wait for confirmation
-      // Add to pending uploads tracking
-      const pendingId = response.data?.data?.id;
-      if (pendingId) {
-        pendingUploads.set(pendingId, {
-          filePath,
-          fileName,
-          uploadedAt: new Date().toISOString(),
-          machineId: 'unknown'
-        });
+      // Delete the local file immediately since upload was successful
+      try {
+        fs.unlinkSync(filePath);
+        console.log(`✓ Deleted local file: ${fileName}`);
+      } catch (deleteErr) {
+        console.error(`✗ Failed to delete local file: ${fileName} - ${deleteErr.message}`);
       }
 
       return true;
@@ -148,9 +144,8 @@ const saveCancelledScans = (cancelledScans) => {
 
 // Helper: Start status checker
 const startStatusChecker = () => {
-  if (statusCheckInterval) clearInterval(statusCheckInterval);
-  statusCheckInterval = setInterval(checkPendingStatus, 30000); // Check every 30 seconds
-  console.log('Started pending status checker (30s interval)');
+  // Disabled: No longer using pending system, files are uploaded directly
+  console.log('Status checker disabled - using direct upload');
 };
 
 // Helper: Check pending status
@@ -220,7 +215,7 @@ const watcher = chokidar.watch(SCAN_DIR, {
 });
 
 console.log(`Watching: ${SCAN_DIR}`);
-console.log(`API: ${PENDING_API_URL}`);
+console.log(`API: ${UPLOAD_API_URL}`);
 
 watcher.on('add', (filePath) => {
   const fileName = path.basename(filePath);

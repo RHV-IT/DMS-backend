@@ -48,8 +48,8 @@ let agentConfig = {
   userId: null,
   userEmail: null,
   machineId: null,
-  apiUrl: `${API_BASE}/api/v1/scanner/pending`,
-  pendingUploads: new Map(),
+  apiUrl: `${API_BASE}/api/v1/scanner/upload`,
+  pendingUploads: new Map(), // Keep for backward compatibility but not used
   cancelledUploads: new Set()
 };
 
@@ -235,8 +235,10 @@ async function uploadFile(filePath) {
     formData.append('hostname', os.hostname());
     formData.append('os', os.platform());
     formData.append('osVersion', os.release());
+    formData.append('uploadSource', 'scanner');
+    formData.append('confidentialityLevel', 'internal'); // Default confidentiality level
     log('Uploading: ' + fileName + ' (' + formatBytes(stats.size) + ') machineId=' + machineId);
-    const response = await axios.post(`${API_BASE}/api/v1/scanner/pending`, formData, {
+    const response = await axios.post(`${API_BASE}/api/v1/scanner/upload`, formData, {
       headers: {
         ...formData.getHeaders(),
         Authorization: `Bearer ${authToken}`,
@@ -251,19 +253,15 @@ async function uploadFile(filePath) {
 
     if (response.status === 200 || response.status === 201 || response.data?.success) {
       console.log(`Upload successful: ${fileName}`);
-      log(`Pending upload: ${fileName}`);
+      log(`Direct upload completed: ${fileName}`);
 
-      // DO NOT delete file immediately - wait for confirmation
-      // Add to pending uploads tracking
-      const pendingId = response.data?.data?.id;
-      if (pendingId) {
-        agentConfig.pendingUploads.set(pendingId, {
-          filePath,
-          fileName,
-          uploadedAt: new Date().toISOString(),
-          machineId: agentConfig.machineId
-        });
-        saveConfig(agentConfig);
+      // Delete the local file immediately since upload was successful
+      try {
+        fs.unlinkSync(filePath);
+        log(`Deleted local file: ${fileName}`);
+        console.log(`Local file deleted: ${fileName}`);
+      } catch (deleteErr) {
+        log(`Failed to delete local file: ${fileName} - ${deleteErr.message}`, 'WARNING');
       }
 
       return { success: true, data: response.data?.data, filePath: filePath };
@@ -363,17 +361,15 @@ function startWatcher() {
   watcher.on('error', (err) => log('Watcher error: ' + err.message, 'ERROR'));
   watcher.on('ready', () => {
     log('Watching for scans...');
-    // Start periodic status checker
-    startStatusChecker();
+    // Status checker disabled - using direct upload
   });
 }
 
 let statusCheckInterval = null;
 
 function startStatusChecker() {
-  if (statusCheckInterval) clearInterval(statusCheckInterval);
-  statusCheckInterval = setInterval(checkPendingStatus, 30000); // Check every 30 seconds
-  log('Started pending status checker (30s interval)');
+  // Disabled: No longer using pending system, files are uploaded directly
+  log('Status checker disabled - using direct upload');
 }
 
 async function checkPendingStatus() {

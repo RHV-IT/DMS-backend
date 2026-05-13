@@ -29,7 +29,7 @@ function canConfidentialityLevelAccess(userLevel, fileLevel) {
 
 /**
  * Check if user can access a file based on confidentiality rules
- * @param {Object} user - User object with department and confidentialityLevel
+ * @param {Object} user - User object with department and confidentialityLevels (array)
  * @param {Object} file - File object with department, confidentialityLevel, owner
  * @param {Array} sharedPermissions - Array of permission objects for this file
  * @returns {boolean}
@@ -42,8 +42,11 @@ function canUserAccessFile(user, file, sharedPermissions = []) {
 
   const userDept = user.department;
   const fileDept = file.department;
-  const userLevel = user.confidentialityLevel || 'public';
+  const userLevels = user.confidentialityLevels || ['public'];
   const fileLevel = file.confidentialityLevel || 'internal';
+
+  // Check if user's confidentiality levels include the file's level
+  const hasConfidentialityAccess = userLevels.includes(fileLevel);
 
   // Check if user is explicitly shared with this file (for highly confidential files)
   const isExplicitlyShared = sharedPermissions.some(perm =>
@@ -63,17 +66,13 @@ function canUserAccessFile(user, file, sharedPermissions = []) {
     return isOwner || isExplicitlyShared;
   }
 
-  // For all other levels: must be same department
+  // For all other levels: must be same department and user must have appropriate confidentiality level
   if (userDept !== fileDept) {
-    // Exception: highly confidential files can be shared across departments
-    if (fileLevel === 'highly_confidential' && isExplicitlyShared) {
-      return true;
-    }
     return false;
   }
 
-  // Same department: check confidentiality level hierarchy
-  return canConfidentialityLevelAccess(userLevel, fileLevel);
+  // Same department: user must have the file's confidentiality level or higher
+  return hasConfidentialityAccess;
 }
 
 /**
@@ -91,7 +90,11 @@ function canUserAccessFileContents(user, file, sharedPermissions = []) {
 
   const userDept = user.department;
   const fileDept = file.department;
+  const userLevels = user.confidentialityLevels || ['public'];
   const fileLevel = file.confidentialityLevel || 'internal';
+
+  // Check if user's confidentiality levels include the file's level
+  const hasConfidentialityAccess = userLevels.includes(fileLevel);
 
   // Check if user is explicitly shared with this file
   const isExplicitlyShared = sharedPermissions.some(perm =>
@@ -111,8 +114,12 @@ function canUserAccessFileContents(user, file, sharedPermissions = []) {
     return isOwner || isExplicitlyShared;
   }
 
-  // For other files: use standard access rules
-  return canUserAccessFile(user, file, sharedPermissions);
+  // For other files: must be same department and have appropriate confidentiality level
+  if (userDept !== fileDept) {
+    return false;
+  }
+
+  return hasConfidentialityAccess;
 }
 
 /**
@@ -130,7 +137,11 @@ function canUserManageFile(user, file, sharedPermissions = []) {
 
   const userDept = user.department;
   const fileDept = file.department;
+  const userLevels = user.confidentialityLevels || ['public'];
   const fileLevel = file.confidentialityLevel || 'internal';
+
+  // Check if user's confidentiality levels include the file's level
+  const hasConfidentialityAccess = userLevels.includes(fileLevel);
 
   // Check if user is the owner
   const isOwner = file.owner && file.owner.toString() === user._id.toString();
@@ -145,7 +156,7 @@ function canUserManageFile(user, file, sharedPermissions = []) {
     return isOwner;
   }
 
-  // For other files: owner can manage, or users with edit permissions
+  // For other files: owner can manage, or users with edit permissions and appropriate confidentiality level
   if (isOwner) {
     return true;
   }
@@ -156,7 +167,7 @@ function canUserManageFile(user, file, sharedPermissions = []) {
     perm.access === 'edit' && !perm.isRevoked
   );
 
-  return hasEditPermission;
+  return hasEditPermission && hasConfidentialityAccess;
 }
 
 /**
