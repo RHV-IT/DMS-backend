@@ -2,11 +2,12 @@
   "name": "dms-backend",
   "version": "1.0.0",
   "description": "Enterprise Document Management System Backend",
-  "main": "src/app.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node --no-deprecation src/app.js",
+    "start": "node --no-deprecation index.js",
     "dev": "nodemon --no-deprecation src/app.js",
-    "seed": "node --no-deprecation src/utils/seed.js"
+    "seed": "node --no-deprecation src/utils/seed.js",
+    "vercel-build": "echo 'Vercel build completed'"
   },
   "keywords": [
     "dms",

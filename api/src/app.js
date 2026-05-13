@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const swaggerUi = require("swagger-ui-express");
 const path = require("path");
@@ -11,84 +12,135 @@ const logger = require("./config/logger");
 const { seedDepartments, seedSuperAdmin } = require("./utils/seed");
 const mongoose = require("mongoose");
 const adminController = require("./controllers/adminController");
-const corsConfig = require("./config/cors");
-const { ensureCorsHeaders } = require("./config/cors");
 
 const app = express();
 
-// ============================================================
-// PRODUCTION-GRADE MIDDLEWARE ORDER
-// This order is CRITICAL for CORS + Auth stability
-// ============================================================
+/*
+========================================
+CORS MUST BE FIRST MIDDLEWARE
+========================================
+*/
 
-// [1] GLOBAL CORS MIDDLEWARE - FIRST AND MOST IMPORTANT
-// Handles ALL preflight OPTIONS requests and sets CORS headers for ALL responses
-// This guarantees the allowed origins work 100% of the time
-app.use(corsConfig);
+const allowedOrigins = [
+  "https://rhv-dms.vercel.app",
+  "http://192.168.0.153:3000",
+  "http://localhost:3000",
+  "http://docmanager.rhv",
+];
 
-// [2] EXPLICIT OPTIONS HANDLER - SAFETY NET
-// Ensures preflight requests are ALWAYS handled with CORS
-app.options("*", cors(corsConfig.corsOptions));
+const corsOptions = {
+  origin: (origin, callback) => {
+    console.log("Incoming Origin:", origin);
 
-// [3] COOKIE PARSER - Must come before auth middleware
-app.use(cookieParser());
+    if (!origin) {
+      return callback(null, true);
+    }
 
-// [4] BODY PARSERS - For JSON and URL-encoded requests
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true }));
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-// [5] REQUEST LOGGING - Comprehensive logging for debugging
+    return callback(null, false);
+  },
+
+  credentials: true,
+
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+    "Origin",
+    "X-Requested-With",
+    "Content-Type",
+    "Accept",
+    "Authorization",
+    "x-browser",
+    "x-device",
+    "x-client-type",
+  ],
+
+  exposedHeaders: [
+    "Authorization",
+    "Content-Length",
+    "Content-Type",
+  ],
+
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
+
+app.options("*", cors(corsOptions));
+
+/*
+========================================
+DEBUG LOGGER
+========================================
+*/
+
 app.use((req, res, next) => {
-  const requestId = Math.random().toString(36).substring(2, 8);
-  const origin = req.headers.origin || 'none';
-
-  logger.info(`[${req.method}:${requestId}] ${req.path} - Origin: ${origin}`);
-
-  // CORS DEBUG LOGGING - Show all request details
-  console.log("Origin:", req.headers.origin);
-  console.log("Method:", req.method);
-  console.log("Headers:", req.headers);
-
-  // Log auth-related headers for debugging
-  if (req.headers.authorization) {
-    logger.debug(`[AUTH:${requestId}] Bearer token: ${req.headers.authorization.substring(0, 20)}...`);
-  }
-  if (req.headers.cookie) {
-    logger.debug(`[COOKIE:${requestId}] Cookie header present`);
-  }
-  if (req.method === 'OPTIONS') {
-    logger.debug(`[PREFLIGHT:${requestId}] ${origin} requesting: ${req.headers['access-control-request-method']} with headers: ${req.headers['access-control-request-headers']}`);
-  }
-
-  // Store request ID for response correlation
-  req.requestId = requestId;
+  console.log("METHOD:", req.method);
+  console.log("URL:", req.url);
+  console.log("HEADERS:", req.headers);
   next();
 });
 
 // [6] CORS SAFETY NET - REMOVED: Main CORS middleware now handles everything properly
+=======
+  console.log("METHOD:", req.method);
+  console.log("URL:", req.url);
+  console.log("HEADERS:", req.headers);
+  next();
+});
 
-// [7] Database connection middleware - ensures DB is connected for API routes
+/*
+========================================
+COOKIE PARSER
+========================================
+*/
+>>>>>>> 325cd05 (🚀 VERCEL DEPLOYMENT FIX - CORS Headers on All Responses)
+
+app.use(cookieParser());
+
+/*
+========================================
+BODY PARSERS
+========================================
+*/
+
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+/*
+========================================
+DATABASE CONNECTION
+========================================
+*/
+
+// IMPORTANT: Database connection middleware must come AFTER CORS
+// to ensure CORS headers are set even if DB connection fails
 app.use("/api", ensureConnected);
 
-// [8] Audit enhancement middleware - attaches device info to requests
+/*
+========================================
+AUDIT LOGGING
+========================================
+*/
+
 const { enhanceAuditLog } = require("./middlewares/auditEnhancementMiddleware");
 app.use(enhanceAuditLog);
 
-// [9] Swagger documentation (optional)
-if (process.env.ENABLE_SWAGGER !== "false") {
-  const swaggerSpec = require("./utils/swagger");
-  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-  app.get("/api-docs.json", (req, res) => res.json(swaggerSpec));
-}
-
-// ============================================================
-// ROUTES
-// Auth middleware is applied PER-ROUTE inside each router file,
-// NOT globally here. This is intentional:
-// - /api/v1/auth/* routes have their own auth rules
-// - /api/v1/auth/* routes apply auth ONLY to protected sub-routes
-// - Public routes (health, cors-test) have NO auth
-// ============================================================
+/*
+========================================
+ROUTES
+========================================
+*/
 
 const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
@@ -102,6 +154,13 @@ const scannerRoutes = require("./routes/scanner.routes");
 const pendingScanRoutes = require("./routes/pendingScan.routes");
 const agentRoutes = require("./routes/agent.routes");
 
+// Swagger documentation
+if (process.env.ENABLE_SWAGGER !== "false") {
+  const swaggerSpec = require("./utils/swagger");
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.get("/api-docs.json", (req, res) => res.json(swaggerSpec));
+}
+
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/files", fileRoutes);
@@ -114,16 +173,27 @@ app.use("/api/v1/scanner", scannerRoutes);
 app.use("/api/v1/scanner", pendingScanRoutes);
 app.use("/api/v1/agent", agentRoutes);
 
-// Login tracking endpoint (no auth needed, used by scanner agent)
+// Login tracking endpoint
 app.post("/api/v1/auth/track-login", (req, res) => {
-  logger.info(`[TRACK-LOGIN] Login tracked from: ${req.headers.origin || "unknown"}`);
   res.json({ success: true, message: "Login tracked" });
 });
 
-// ============================================================
-// PUBLIC ENDPOINTS (no auth, but CORS applied via global middleware)
-// ============================================================
+/*
+========================================
+PUBLIC ENDPOINTS
+========================================
+*/
 
+// Simple health check (no database dependency)
+app.get("/ping", (req, res) => {
+  res.json({
+    success: true,
+    message: "Pong",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Health check with database status
 app.get("/health", (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
   res.json({
@@ -151,7 +221,6 @@ app.get("/api/v1/cors-test", (req, res) => {
     message: "CORS is working!",
     origin: req.headers.origin,
     timestamp: new Date().toISOString(),
-    allowedOrigins: corsConfig.allowedOrigins || [],
   });
 });
 
@@ -178,20 +247,30 @@ app.get("/", (req, res) => {
 
 app.get("/favicon.ico", (req, res) => res.status(204).end());
 
-// ============================================================
-// ERROR HANDLERS - MUST BE LAST IN MIDDLEWARE CHAIN
-// These catch any errors not caught by route handlers.
-// The errorHandler includes CORS headers via ensureCorsHeaders,
-// but we also set them here as an additional safety measure.
-// ============================================================
+/*
+========================================
+GLOBAL ERROR HANDLER
+========================================
+*/
 
-const { errorHandler, notFound } = require("./middlewares/errorMiddleware");
+app.use((err, req, res, next) => {
+  console.error("GLOBAL ERROR:", err);
 
-// 404 handler - catches any routes that don't exist
-app.use(notFound);
+  res.header(
+    "Access-Control-Allow-Origin",
+    req.headers.origin || "*"
+  );
 
-// Global error handler - catches all thrown errors
-app.use(errorHandler);
+  res.header(
+    "Access-Control-Allow-Credentials",
+    "true"
+  );
+
+  res.status(500).json({
+    success: false,
+    message: err.message,
+  });
+});
 
 // ============================================================
 // SERVER STARTUP
@@ -263,16 +342,23 @@ if (require.main === module) {
   });
 }
 
+/*
+========================================
+VERCEL ERROR HANDLING
+========================================
+*/
+
+process.on("uncaughtException", console.error);
+process.on("unhandledRejection", console.error);
+
 module.exports = app;
-module.exports.startServer = startServer;
-module.exports.initializeApp = initializeApp;
 
-// Global error handlers for uncaught exceptions
-process.on("unhandledRejection", (reason, promise) => {
-  logger.error("Unhandled Rejection:", { reason: reason?.message || reason, promise });
-});
+// For Vercel serverless functions
+if (process.env.VERCEL) {
+  module.exports = (req, res) => {
+    console.log("VERCEL REQUEST:", req.method, req.url);
+    console.log("VERCEL ORIGIN:", req.headers.origin);
 
-process.on("uncaughtException", (error) => {
-  logger.error("Uncaught Exception:", { message: error.message, stack: error.stack });
-  process.exit(1);
-});
+    return app(req, res);
+  };
+}

@@ -19,13 +19,11 @@ const auth = async (req, res, next) => {
   const requestId = Math.random().toString(36).substring(2, 8);
 
   // ================================================================
-  // FIX #1: OPTIONS preflight requests MUST bypass auth entirely.
-  // The CORS middleware handles preflight. Auth should never touch it.
-  // Without this, OPTIONS requests fail with 401,
-  // and the browser blocks the actual request.
+  // CRITICAL: OPTIONS requests MUST NEVER hit auth middleware
+  // This prevents 401 errors on preflight requests
   // ================================================================
   if (req.method === "OPTIONS") {
-    logger.debug(`[AUTH:${requestId}] ⚡ Skipping auth for OPTIONS preflight: ${req.path}`);
+    console.log(`[AUTH:${requestId}] ⚡ SKIPPING AUTH for OPTIONS: ${req.path}`);
     return next();
   }
 
