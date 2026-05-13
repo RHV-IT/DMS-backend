@@ -15,8 +15,34 @@ const corsConfig = require('./config/cors');
 
 const app = express();
 
+// CORS must be applied FIRST, before any other middleware
 app.use(corsConfig);
-app.options('*', corsConfig);
+
+// Explicit OPTIONS handler for preflight requests
+app.options('*', (req, res) => {
+  console.log("🔄 Handling OPTIONS preflight for:", req.headers.origin, req.path);
+  res.sendStatus(200);
+});
+
+// CORS debugging middleware (only in development)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    const method = req.method;
+    const headers = req.headers['access-control-request-headers'] || req.headers.authorization ? 'auth' : 'basic';
+
+    console.log(`🌐 ${method} ${req.path} - Origin: ${origin || 'none'} - Headers: ${headers}`);
+
+    // Add CORS headers to response for debugging
+    if (origin) {
+      res.setHeader('X-CORS-Origin', origin);
+      res.setHeader('X-CORS-Method', method);
+      res.setHeader('X-CORS-Allowed', corsConfig.allowedOrigins?.includes(origin) ? 'yes' : 'no');
+    }
+
+    next();
+  });
+}
 
 app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));
@@ -66,24 +92,17 @@ app.use('/api/v1/scanner', scannerRoutes);
 app.use('/api/v1/scanner', pendingScanRoutes);
 app.use('/api/v1/agent', agentRoutes);
 
-// MANUAL CORS FIX FOR SCANNER ENDPOINTS
-app.use('/api/v1/scanner', (req, res, next) => {
-  const allowedOrigins = ['https://rhv-dms.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+// CORS is now handled globally - no need for manual scanner endpoint fixes
 
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-  }
-
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-    return;
-  }
-
-  next();
+// CORS test endpoint
+app.get('/api/v1/cors-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS is working!',
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString(),
+    allowedOrigins: corsConfig.allowedOrigins || []
+  });
 });
 
 app.get('/api/v1/config/confidentiality-levels', (req, res) => {
