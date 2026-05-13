@@ -184,14 +184,14 @@ jobs:
 
       # ---- Option B: Deploy to Vercel ----
       - name: Deploy to Vercel
-        if: secrets.VERCEL_TOKEN != ''
+        if: ${{ secrets.VERCEL_TOKEN != '' }}
         run: |
           npm install -g vercel
           vercel --prod --yes --token ${{ secrets.VERCEL_TOKEN }}
 
       # ---- Option C: Trigger a webhook / deployment pipeline ----
       - name: Trigger deployment webhook
-        if: secrets.DEPLOY_WEBHOOK_URL != '' && secrets.VERCEL_TOKEN == ''
+        if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' && secrets.VERCEL_TOKEN == '' }}
         run: |
           curl -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
