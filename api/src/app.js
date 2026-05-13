@@ -1,212 +1,253 @@
-require('dotenv').config();
-const express = require('express');
-const cookieParser = require('cookie-parser');
-const swaggerUi = require('swagger-ui-express');
-const path = require('path');
-const fs = require('fs');
+require("dotenv").config();
+const express = require("express");
+const cookieParser = require("cookie-parser");
+const swaggerUi = require("swagger-ui-express");
+const path = require("path");
+const fs = require("fs");
 
-const connectDB = require('./config/database');
-const { ensureConnected } = require('./config/database');
-const logger = require('./config/logger');
-const { seedDepartments, seedSuperAdmin } = require('./utils/seed');
-const mongoose = require('mongoose');
-const adminController = require('./controllers/adminController');
-const corsConfig = require('./config/cors');
+const connectDB = require("./config/database");
+const { ensureConnected } = require("./config/database");
+const logger = require("./config/logger");
+const { seedDepartments, seedSuperAdmin } = require("./utils/seed");
+const mongoose = require("mongoose");
+const adminController = require("./controllers/adminController");
+const corsConfig = require("./config/cors");
+const { ensureCorsHeaders } = require("./config/cors");
 
 const app = express();
 
-// CORS must be applied FIRST, before any other middleware
+// ============================================================
+// PRODUCTION-GRADE MIDDLEWARE ORDER
+// This order is CRITICAL for CORS + Auth stability
+// ============================================================
+
+// [1] GLOBAL CORS MIDDLEWARE - FIRST AND MOST IMPORTANT
+// Handles ALL preflight OPTIONS requests and sets CORS headers for ALL responses
+// This guarantees the allowed origins work 100% of the time
 app.use(corsConfig);
 
-// Explicit OPTIONS handler for preflight requests
-app.options('*', (req, res) => {
-  console.log("🔄 Handling OPTIONS preflight for:", req.headers.origin, req.path);
-  res.sendStatus(200);
+// [2] EXPLICIT OPTIONS HANDLER - SAFETY NET
+// Ensures preflight requests are ALWAYS handled, even if cors() middleware has issues
+app.options("*", (req, res) => {
+  const origin = req.headers.origin;
+  logger.info(`[OPTIONS:${Math.random().toString(36).substring(2,8)}] Preflight: ${origin || 'none'} → ${req.path}`);
+
+  // Always set CORS headers for preflight responses
+  if (origin) {
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD");
+    res.setHeader("Access-Control-Allow-Headers",
+      "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-Client-Type, X-Machine-Id, X-Machine-Name, X-Hostname, X-Platform, X-Source"
+    );
+    res.setHeader("Access-Control-Expose-Headers", "Content-Length, X-Total-Count, X-File-Size, X-Auth-Token, X-Request-Id");
+    res.setHeader("Access-Control-Max-Age", "600");
+  }
+
+  // Return 200 OK for preflight (more compatible than 204)
+  res.status(200).end();
 });
 
-// CORS debugging middleware (only in development)
-if (process.env.NODE_ENV !== 'production') {
-  app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    const method = req.method;
-    const headers = req.headers['access-control-request-headers'] || req.headers.authorization ? 'auth' : 'basic';
-
-    console.log(`🌐 ${method} ${req.path} - Origin: ${origin || 'none'} - Headers: ${headers}`);
-
-    // Add CORS headers to response for debugging
-    if (origin) {
-      res.setHeader('X-CORS-Origin', origin);
-      res.setHeader('X-CORS-Method', method);
-      res.setHeader('X-CORS-Allowed', corsConfig.allowedOrigins?.includes(origin) ? 'yes' : 'no');
-    }
-
-    next();
-  });
-}
-
+// [3] COOKIE PARSER - Must come before auth middleware
 app.use(cookieParser());
-app.use(express.json({ limit: '50mb' }));
+
+// [4] BODY PARSERS - For JSON and URL-encoded requests
+app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+// [5] REQUEST LOGGING - Comprehensive logging for debugging
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path}`);
+  const requestId = Math.random().toString(36).substring(2, 8);
+  const origin = req.headers.origin || 'none';
+
+  logger.info(`[${req.method}:${requestId}] ${req.path} - Origin: ${origin}`);
+
+  // Log auth-related headers for debugging
+  if (req.headers.authorization) {
+    logger.debug(`[AUTH:${requestId}] Bearer token: ${req.headers.authorization.substring(0, 20)}...`);
+  }
+  if (req.headers.cookie) {
+    logger.debug(`[COOKIE:${requestId}] Cookie header present`);
+  }
+  if (req.method === 'OPTIONS') {
+    logger.debug(`[PREFLIGHT:${requestId}] ${origin} requesting: ${req.headers['access-control-request-method']} with headers: ${req.headers['access-control-request-headers']}`);
+  }
+
+  // Store request ID for response correlation
+  req.requestId = requestId;
   next();
 });
 
-// Ensure database connection for all API routes
-app.use('/api', ensureConnected);
+// [6] CORS SAFETY NET - Ensures CORS headers on ALL responses
+app.use(ensureCorsHeaders);
 
-const { enhanceAuditLog } = require('./middlewares/auditEnhancementMiddleware');
+// [7] Database connection middleware - ensures DB is connected for API routes
+app.use("/api", ensureConnected);
+
+// [8] Audit enhancement middleware - attaches device info to requests
+const { enhanceAuditLog } = require("./middlewares/auditEnhancementMiddleware");
 app.use(enhanceAuditLog);
 
-if (process.env.ENABLE_SWAGGER !== 'false') {
-  const swaggerSpec = require('./utils/swagger');
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-  app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
+// [9] Swagger documentation (optional)
+if (process.env.ENABLE_SWAGGER !== "false") {
+  const swaggerSpec = require("./utils/swagger");
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.get("/api-docs.json", (req, res) => res.json(swaggerSpec));
 }
 
-// Routes
-const authRoutes = require('./routes/auth.routes');
-const userRoutes = require('./routes/user.routes');
-const fileRoutes = require('./routes/file.routes');
-const permissionRoutes = require('./routes/permission.routes');
-const notificationRoutes = require('./routes/notification.routes');
-const logRoutes = require('./routes/log.routes');
-const dashboardRoutes = require('./routes/dashboard.routes');
-const settingsRoutes = require('./routes/settings.routes');
-const scannerRoutes = require('./routes/scanner.routes');
-const pendingScanRoutes = require('./routes/pendingScan.routes');
-const agentRoutes = require('./routes/agent.routes');
+// ============================================================
+// ROUTES
+// Auth middleware is applied PER-ROUTE inside each router file,
+// NOT globally here. This is intentional:
+// - /api/v1/auth/* routes have their own auth rules
+// - /api/v1/auth/* routes apply auth ONLY to protected sub-routes
+// - Public routes (health, cors-test) have NO auth
+// ============================================================
 
-app.use('/api/v1/auth', authRoutes);
-app.post('/api/v1/auth/track-login', (req, res) => res.status(200).json({ success: true, message: 'Login tracked' }));
+const authRoutes = require("./routes/auth.routes");
+const userRoutes = require("./routes/user.routes");
+const fileRoutes = require("./routes/file.routes");
+const permissionRoutes = require("./routes/permission.routes");
+const notificationRoutes = require("./routes/notification.routes");
+const logRoutes = require("./routes/log.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
+const settingsRoutes = require("./routes/settings.routes");
+const scannerRoutes = require("./routes/scanner.routes");
+const pendingScanRoutes = require("./routes/pendingScan.routes");
+const agentRoutes = require("./routes/agent.routes");
 
-app.use('/api/v1/users', userRoutes);
-app.use('/api/v1/files', fileRoutes);
-app.use('/api/v1/permissions', permissionRoutes);
-app.use('/api/v1/notifications', notificationRoutes);
-app.use('/api/v1/logs', logRoutes);
-app.use('/api/v1/dashboard', dashboardRoutes);
-app.use('/api/v1/settings', settingsRoutes);
-app.use('/api/v1/scanner', scannerRoutes);
-app.use('/api/v1/scanner', pendingScanRoutes);
-app.use('/api/v1/agent', agentRoutes);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/files", fileRoutes);
+app.use("/api/v1/permissions", permissionRoutes);
+app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/logs", logRoutes);
+app.use("/api/v1/dashboard", dashboardRoutes);
+app.use("/api/v1/settings", settingsRoutes);
+app.use("/api/v1/scanner", scannerRoutes);
+app.use("/api/v1/scanner", pendingScanRoutes);
+app.use("/api/v1/agent", agentRoutes);
 
-// CORS is now handled globally - no need for manual scanner endpoint fixes
+// Login tracking endpoint (no auth needed, used by scanner agent)
+app.post("/api/v1/auth/track-login", (req, res) => {
+  logger.info(`[TRACK-LOGIN] Login tracked from: ${req.headers.origin || "unknown"}`);
+  res.json({ success: true, message: "Login tracked" });
+});
 
-// CORS test endpoint
-app.get('/api/v1/cors-test', (req, res) => {
+// ============================================================
+// PUBLIC ENDPOINTS (no auth, but CORS applied via global middleware)
+// ============================================================
+
+app.get("/health", (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
   res.json({
-    success: true,
-    message: 'CORS is working!',
-    origin: req.headers.origin,
+    success: dbStatus === "connected",
+    database: dbStatus,
+    message: dbStatus === "connected" ? "DMS Server is running" : "Database connection issue",
     timestamp: new Date().toISOString(),
-    allowedOrigins: corsConfig.allowedOrigins || []
   });
 });
 
-app.get('/api/v1/config/confidentiality-levels', (req, res) => {
+app.get("/cors-test", (req, res) => {
   res.json({
-    success: true, data: [
+    success: true,
+    message: "CORS test successful",
+    origin: req.headers.origin,
+    userAgent: req.headers["user-agent"],
+    cookiesPresent: !!req.headers.cookie,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/api/v1/cors-test", (req, res) => {
+  res.json({
+    success: true,
+    message: "CORS is working!",
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString(),
+    allowedOrigins: corsConfig.allowedOrigins || [],
+  });
+});
+
+app.get("/api/v1/config/confidentiality-levels", (req, res) => {
+  res.json({
+    success: true,
+    data: [
       { label: "Public", value: "public" },
       { label: "Internal", value: "internal" },
       { label: "Confidential", value: "confidential" },
-      { label: "Highly Confidential", value: "highly_confidential" }
-    ]
+      { label: "Highly Confidential", value: "highly_confidential" },
+    ],
   });
 });
 
-app.post('/api/v1/admin/register', adminController.registerAdmin);
-
-app.get('/scanner', (req, res) => {
-  const filePath = path.join(__dirname, '../public/scanner-download.html');
-  fs.existsSync(filePath) ? res.sendFile(filePath) : res.status(404).json({ success: false, message: 'Page not found' });
+app.get("/scanner", (req, res) => {
+  const filePath = path.join(__dirname, "../public/scanner-download.html");
+  fs.existsSync(filePath) ? res.sendFile(filePath) : res.status(404).json({ success: false, message: "Page not found" });
 });
 
-app.post('/set-token', (req, res) => {
-  const { token, userId, userEmail, userName } = req.body;
-  if (!token || !userId || !userEmail) {
-    return res.status(400).json({ success: false, message: 'Token, userId, and userEmail are required' });
-  }
-  req.session = req.session || {};
-  req.session.token = token;
-  req.session.userId = userId;
-  req.session.userEmail = userEmail;
-  req.session.userName = userName;
-
-  res.json({ success: true, message: 'Token set successfully', user: { userId, userEmail, userName } });
+app.get("/", (req, res) => {
+  res.json({ success: true, message: "DMS API running", docs: "/api-docs" });
 });
 
-app.get('/health', (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-  res.status(dbStatus === 'connected' ? 200 : 503).json({
-    success: dbStatus === 'connected',
-    database: dbStatus,
-    message: dbStatus === 'connected' ? 'DMS Server is running' : 'Database connection issue'
-  });
-});
+app.get("/favicon.ico", (req, res) => res.status(204).end());
 
-app.get('/cors-test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'CORS test successful',
-    origin: req.headers.origin,
-    userAgent: req.headers['user-agent'],
-    timestamp: new Date().toISOString()
-  });
-});
+// ============================================================
+// ERROR HANDLERS - MUST BE LAST IN MIDDLEWARE CHAIN
+// These catch any errors not caught by route handlers.
+// The errorHandler includes CORS headers via ensureCorsHeaders,
+// but we also set them here as an additional safety measure.
+// ============================================================
 
-// Test endpoint for scanner pending without auth (for debugging)
-app.post('/api/v1/scanner/pending-test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Pending test endpoint (no auth required)',
-    origin: req.headers.origin,
-    method: req.method,
-    headers: req.headers,
-    timestamp: new Date().toISOString()
-  });
-});
+const { errorHandler, notFound } = require("./middlewares/errorMiddleware");
 
-
-
-app.get('/', (req, res) => {
-  res.json({ success: true, message: 'DMS API running', docs: '/api-docs' });
-});
-
-app.get('/favicon.ico', (req, res) => res.status(204).end());
-
-const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
+// 404 handler - catches any routes that don't exist
 app.use(notFound);
+
+// Global error handler - catches all thrown errors
 app.use(errorHandler);
 
+// ============================================================
+// SERVER STARTUP
+// ============================================================
+
 const PORT = process.env.PORT || 5000;
+
+// Socket.IO Server (for WebSocket support)
+let io = null;
 
 const startServer = async (retryCount = 0) => {
   const maxRetries = 3;
   try {
     await connectDB();
-    logger.info('Database connected');
+    logger.info("✅ Database connected");
 
-    await seedDepartments().catch(() => { });
-    await seedSuperAdmin().catch(() => { });
+    await seedDepartments().catch(() => {});
+    await seedSuperAdmin().catch(() => {});
 
-    if (process.env.NODE_ENV !== 'production') {
-      app.listen(PORT, '0.0.0.0', () => {
-        logger.info(`Server running on port ${PORT}`);
-        console.log(`🚀 Server: http://localhost:${PORT}`);
+    if (process.env.NODE_ENV !== "production") {
+      // Create HTTP server
+      const server = app.listen(PORT, "0.0.0.0", () => {
+        logger.info(`🚀 Server running on port ${PORT}`);
         console.log(`📄 Docs: http://localhost:${PORT}/api-docs`);
+        console.log(`🔌 WebSocket: ws://localhost:${PORT}`);
       });
+
+      // Initialize Socket.IO with CORS support
+      const createSocketIOServer = require("./config/socket");
+      io = createSocketIOServer(server);
+      logger.info("🔌 Socket.IO server initialized");
     }
   } catch (error) {
-    logger.error('Failed to start server:', error.message);
+    logger.error("💥 Failed to start server:", error.message);
 
     if (retryCount < maxRetries) {
-      const delay = Math.min(1000 * Math.pow(2, retryCount), 30000); // Exponential backoff, max 30s
-      logger.info(`Retrying database connection in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+      const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+      logger.info(`🔄 Retrying database connection in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
       setTimeout(() => startServer(retryCount + 1), delay);
     } else {
-      logger.error(`Failed to connect to database after ${maxRetries} attempts`);
+      logger.error("❌ Failed to connect to database after maximum attempts");
       process.exit(1);
     }
   }
@@ -216,23 +257,21 @@ const startServer = async (retryCount = 0) => {
 const initializeApp = async () => {
   try {
     await connectDB();
-    console.log('✅ Database connected during app initialization');
+    console.log("✅ Database connected during app initialization");
 
-    // Only seed in development or when explicitly requested
-    if (process.env.NODE_ENV === 'development' || process.env.SEED_DATA === 'true') {
-      await seedDepartments().catch(() => { });
-      await seedSuperAdmin().catch(() => { });
+    if (process.env.NODE_ENV === "development" || process.env.SEED_DATA === "true") {
+      await seedDepartments().catch(() => {});
+      await seedSuperAdmin().catch(() => {});
     }
   } catch (err) {
-    console.error('❌ DB connection failed during initialization:', err.message);
-    // In production/serverless, don't exit - let individual requests handle connection issues
-    if (process.env.NODE_ENV === 'development') {
+    console.error("❌ DB connection failed during initialization:", err.message);
+    if (process.env.NODE_ENV === "development") {
       process.exit(1);
     }
   }
 };
 
-// Start server if this file is run directly (not imported as module)
+// Start server if run directly (not imported as module)
 if (require.main === module) {
   initializeApp().then(() => {
     startServer();
@@ -243,12 +282,12 @@ module.exports = app;
 module.exports.startServer = startServer;
 module.exports.initializeApp = initializeApp;
 
-// Global error handlers
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection:', promise, reason);
+// Global error handlers for uncaught exceptions
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error("Unhandled Rejection:", { reason: reason?.message || reason, promise });
 });
 
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught Exception:", { message: error.message, stack: error.stack });
   process.exit(1);
 });

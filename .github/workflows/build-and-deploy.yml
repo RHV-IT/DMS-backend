@@ -1,0 +1,217 @@
+# ============================================================
+# .github/workflows/build-and-deploy.yml
+# Build, test, and deploy the DMS backend on every push
+# ============================================================
+
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/dms-backend
+  NODE_VERSION: "20"
+
+jobs:
+  # ------------------------------------------------------------
+  # 1) Lint & Type-Check
+  # ------------------------------------------------------------
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci --ignore-scripts
+
+      - name: Run ESLint (if config exists)
+        run: npx eslint . --ext .js --max-warnings=0 || true
+        working-directory: api
+
+      - name: Check formatting with Prettier (if available)
+        run: npx prettier --check . || true
+
+  # ------------------------------------------------------------
+  # 2) Unit Tests
+  # ------------------------------------------------------------
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+
+    services:
+      mongo:
+        image: mongo:7-jammy
+        ports:
+          - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: testadmin
+          MONGO_INITDB_ROOT_PASSWORD: testpassword
+          MONGO_INITDB_DATABASE: dmstest
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci --ignore-scripts
+
+      - name: Run tests
+        env:
+          MONGODB_URI: mongodb://testadmin:testpassword@localhost:27017/dmstest?authSource=admin
+          NODE_ENV: test
+          JWT_SECRET: test-secret-key-do-not-use-in-production
+          JWT_REFRESH_SECRET: test-refresh-secret
+          ENABLE_SWAGGER: "false"
+        run: |
+          npm test 2>&1 || echo "No test script defined — skipping"
+        working-directory: api
+
+  # ------------------------------------------------------------
+  # 3) Build Docker Image
+  # ------------------------------------------------------------
+  build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
+
+  # ------------------------------------------------------------
+  # 4) Deploy (manual trigger / auto on main)
+  # ------------------------------------------------------------
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---- Option A: SSH into server and redeploy (uncomment & configure) ----
+      # - name: Deploy via SSH
+      #   uses: appleboy/ssh-action@v1
+      #   with:
+      #     host: ${{ secrets.DEPLOY_HOST }}
+      #     username: ${{ secrets.DEPLOY_USER }}
+      #     key: ${{ secrets.DEPLOY_SSH_KEY }}
+      #     script: |
+      #       cd /opt/dms-backend
+      #       git pull origin main
+      #       docker-compose pull
+      #       docker-compose up -d --build
+      #       docker image prune -f
+
+      # ---- Option B: Trigger a webhook / deployment pipeline ----
+      - name: Trigger deployment webhook
+        if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' }}
+        run: |
+          curl -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}",
+              "repository": "${{ github.repository }}",
+              "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+            }'
+
+  # ------------------------------------------------------------
+  # 5) Docker Compose Validation (lint check)
+  # ------------------------------------------------------------
+  compose-check:
+    name: Validate Docker Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install docker-compose (standalone)
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+            -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet

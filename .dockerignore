@@ -1,0 +1,77 @@
+# ============================================================
+# .dockerignore - Keep Docker build context lean
+# ============================================================
+
+# Version control
+.git
+.gitignore
+
+# Dependencies (rebuilt in container)
+node_modules
+api/node_modules
+watcher/node_modules
+agent/node_modules
+scanner-agent/node_modules
+scanner-desktop/node_modules
+
+# Build artifacts
+build/
+dist/
+*.tar.gz
+*.zip
+
+# Environment files (secrets must be injected at runtime)
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# IDE / OS junk
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test / dev files
+coverage/
+.nyc_output/
+__tests__/
+tests/
+*.test.js
+*.spec.js
+
+# Logs
+*.log
+logs/
+
+# Uploads & temporary data (ephemeral, not part of source)
+uploads/
+pending-uploads/
+*.pdf
+
+# CI / meta files
+.kilo/
+.github/
+*.md
+COMPLETE_GUIDE.md
+CORS_SETUP_GUIDE.md
+FIX_SUMMARY.md
+FRONTEND_SCANNER_GUIDE.md
+WATCHER_PENDING_UPDATE.md
+build-installer.sh
+build-installer.bat
+scanner-setup.bat
+setup-scanner.bat
+setup-scanner-account.js
+test_archive.js
+test_archive_simple.js
+
+# Docker files (do not COPY into self)
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+
+# vercel.json is needed for Vercel deployments; remove if Docker-only
+# vercel.json
