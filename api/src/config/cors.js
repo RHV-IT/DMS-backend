@@ -37,7 +37,8 @@ const getAllowedOrigins = () => {
     'https://rhv-dms.vercel.app',
     'https://rhv-dms-backend.vercel.app',
     'https://staging-rhv.vercel.app',
-    'https://rhv-dms.com'
+    'https://rhv-dms.com',
+    'http://docmanager.rhv',
   ];
 
   defaults.forEach(origin => origins.add(origin));
@@ -67,14 +68,15 @@ const validateOrigin = (origin, callback) => {
     return callback(null, true);
   }
 
-  // Development: Allow any localhost or local network IPs
-  if (process.env.NODE_ENV !== 'production') {
-    const localPatterns = [
-      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,      // localhost
-      /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,            // 192.168.x.x
-      /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/,             // 10.x.x.x
-      /^https?:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+(:\d+)?$/  // 172.16-31.x.x
-    ];
+// Development: Allow any localhost, local network IPs, and .rhv hostnames
+   if (process.env.NODE_ENV !== 'production') {
+     const localPatterns = [
+       /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,      // localhost
+       /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,            // 192.168.x.x
+       /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/,             // 10.x.x.x
+       /^https?:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+(:\d+)?$/,  // 172.16-31.x.x
+       /^https?:\/\/([a-zA-Z0-9-]+\.)*rhv$/                // .rhv hostnames
+     ];
 
     for (const pattern of localPatterns) {
       if (pattern.test(origin)) {
