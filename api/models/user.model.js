@@ -29,10 +29,8 @@ class User {
   }
 
   async alreadyExists() {
-    const user = await db
-      .getDb()
-      .collection("users")
-      .findOne({ email: this.email });
+    const database = await db.getDb();
+    const user = await database.collection("users").findOne({ email: this.email });
     if (!user) {
       return false;
     } else {
@@ -42,13 +40,14 @@ class User {
 
   async createUser() {
     try {
+      const database = await db.getDb();
       const hashedPassword = await bcrypt.hash(this.password, 12);
       const userData = {
         name: this.name,
         email: this.email,
         password: hashedPassword,
       };
-      await db.getDb().collection("users").insertOne(userData);
+      await database.collection("users").insertOne(userData);
       await this.sendEmail(this.email, this.name, this.password);
       return;
     } catch (error) {
@@ -112,7 +111,8 @@ class User {
   }
 
   static async findByEmail(email) {
-    const user = await db.getDb().collection("users").findOne({ email: email });
+    const database = await db.getDb();
+    const user = await database.collection("users").findOne({ email: email });
     return user;
   }
 
@@ -121,21 +121,17 @@ class User {
   }
 
   static async findById(id) {
-    return await db
-      .getDb()
-      .collection("users")
-      .findOne({ _id: new ObjectId(id) });
+    const database = await db.getDb();
+    return await database.collection("users").findOne({ _id: new ObjectId(id) });
   }
 
   static async updateUser(id, name, email, password) {
+    const database = await db.getDb();
     const hashedPassword = await bcrypt.hash(password, 12);
-    await db
-      .getDb()
-      .collection("users")
-      .updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { name, email, password: hashedPassword } },
-      );
+    await database.collection("users").updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { name, email, password: hashedPassword } },
+    );
   }
 
   static async sendUpdateUserEmail(user) {
@@ -194,17 +190,13 @@ class User {
   }
 
   static async suspendUser(id) {
-    await db
-      .getDb()
-      .collection("users")
-      .updateOne({ _id: new ObjectId(id) }, { $set: { isSuspended: true } });
+    const database = await db.getDb();
+    await database.collection("users").updateOne({ _id: new ObjectId(id) }, { $set: { isSuspended: true } });
   }
 
   static async restoreUser(id) {
-    await db
-      .getDb()
-      .collection("users")
-      .updateOne({ _id: new ObjectId(id) }, { $set: { isSuspended: false } });
+    const database = await db.getDb();
+    await database.collection("users").updateOne({ _id: new ObjectId(id) }, { $set: { isSuspended: false } });
   }
 
   static async sendRestoreEmail(user) {

@@ -1,7 +1,8 @@
 const User = require("../models/user.model");
 const db = require("../database/documentRepository.db");
 const getUsers = async (req, res) => {
-  const users = await db.getDb().collection("users").find().toArray();
+  const database = await db.getDb();
+  const users = await database.collection("users").find().toArray();
   const newUsers = users.map((user) => {
     return {
       id: user._id.toString(),

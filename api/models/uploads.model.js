@@ -2,48 +2,33 @@ const db = require("../database/documentRepository.db");
 const ObjectId = require("mongodb").ObjectId;
 class Uploads {
   static async getUserfiles(userId) {
-    return await db
-      .getDb()
-      .collection("uploads")
-      .find({ user: userId })
-      .toArray();
+    const database = await db.getDb();
+    return await database.collection("uploads").find({ user: userId }).toArray();
   }
 
   static async getUserFilesInOrder(userId) {
-    return await db
-      .getDb()
-      .collection("uploads")
-      .find({ user: userId })
-      .sort({ _id: -1 })
-      .toArray();
+    const database = await db.getDb();
+    return await database.collection("uploads").find({ user: userId }).sort({ _id: -1 }).toArray();
   }
 
   static async getRecentFiles(userId) {
-    return await db
-      .getDb()
-      .collection("uploads")
-      .find({ user: userId })
-      .sort({ _id: -1 })
-      .limit(10)
-      .toArray();
+    const database = await db.getDb();
+    return await database.collection("uploads").find({ user: userId }).sort({ _id: -1 }).limit(10).toArray();
   }
 
   static async upload(fileData) {
-    if (await db.getDb().collection("uploads").insertOne(fileData)) return true;
+    const database = await db.getDb();
+    if (await database.collection("uploads").insertOne(fileData)) return true;
   }
 
   static async findFileById(id) {
-    return await db
-      .getDb()
-      .collection("uploads")
-      .findOne({ _id: new ObjectId(id) });
+    const database = await db.getDb();
+    return await database.collection("uploads").findOne({ _id: new ObjectId(id) });
   }
 
   static async deleteFile(id) {
-    await db
-      .getDb()
-      .collection("uploads")
-      .deleteOne({ _id: new ObjectId(id) });
+    const database = await db.getDb();
+    await database.collection("uploads").deleteOne({ _id: new ObjectId(id) });
   }
 
   static async groupAllFiles(files) {

@@ -20,15 +20,21 @@ const userRoutes = require("./routes/user.routes");
 //database connection
 const db = require("./database/documentRepository.db");
 
-// Connect to database
-db.connect().then(() => {
-  console.log("Database connected successfully");
-}).catch((error) => {
-  console.error("Database connection failed:", error);
-  process.exit(1);
-});
-
 const app = express();
+
+// Middleware to ensure database connection
+app.use(async (req, res, next) => {
+  try {
+    await db.ensureConnected();
+    next();
+  } catch (error) {
+    console.error("Database connection failed:", error);
+    res.status(500).json({
+      success: false,
+      message: "Database connection failed"
+    });
+  }
+});
 
 // Setup CORS middleware at the top
 app.use(corsConfig);
