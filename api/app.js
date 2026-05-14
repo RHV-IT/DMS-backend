@@ -24,9 +24,8 @@ app.use(express.urlencoded({ extended: false }));
 
 // routes
 app.use('/api/v1/auth', authRoutes);
-app.use(checkAuth);
-app.use('/api/v1/user', userRoutes);
-app.use("/api/v1/admin", adminRoutes);
+app.use('/api/v1/user', checkAuth, userRoutes);
+app.use("/api/v1/admin", checkAuth, adminRoutes);
 
 // 404 handler
 app.use(notFoundMiddleware);
