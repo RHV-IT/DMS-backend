@@ -9,7 +9,9 @@ router.get("/login", authController.getLogin);
 
 router.post("/login", authController.login);
 
-router.get("/logout", authController.getLogout);
+router.post("/refresh", authController.refreshToken);
+
+router.post("/logout", authController.logout);
 
 router.get("/dashboard", authController.getDashboard);
 

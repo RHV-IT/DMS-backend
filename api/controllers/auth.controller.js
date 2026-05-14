@@ -1,5 +1,6 @@
 const User = require("../models/user.model");
 const Uploads = require("../models/uploads.model");
+const jwt = require("jsonwebtoken");
 
 const get = (req, res) => {
   if (req.session && req.session.user) {
@@ -19,45 +20,81 @@ const getLogin = (req, res) => {
 
 const login = async (req, res) => {
   if (!req.body) {
-    res.status(404).json({ message: "body not found" });
-    return;
+    return res.status(400).json({
+      success: false,
+      message: "Request body not found"
+    });
   }
   const email = req.body.email;
   const password = req.body.password;
   const user = await User.findByEmail(email);
   if (!user) {
-    res.status(401).json({ error: "Invalid username or password" });
-    return;
+    return res.status(401).json({
+      success: false,
+      message: "Invalid credentials"
+    });
   }
   if (user.isSuspended) {
-    res.status(401).json({ error: "This account has been suspended" });
-    return;
+    return res.status(401).json({
+      success: false,
+      message: "Account has been suspended"
+    });
   }
-  let token;
+
   try {
     const passwordMatch = await User.comparePassword(password, user.password);
     if (!passwordMatch) {
-      res.status(401).json({ error: "Invalid username or password" });
-      return;
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials"
+      });
     }
-    token = User.generateAuthToken(user);
+
+    const accessToken = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1h",
+      }
+    );
+
+    const refreshToken = jwt.sign(
+      {
+        id: user._id,
+      },
+      process.env.JWT_REFRESH_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role || "user",
+          department: user.department || "",
+          status: user.status || "active",
+          confidentialityLevel: user.confidentialityLevel || "",
+        },
+        accessToken,
+        refreshToken,
+      },
+    });
   } catch (error) {
     console.error("Error during login:", error);
-    res.status(500).json({ error: "An error occurred. Please try again." });
-    return;
-  }
-
-  if (user.isAdmin) {
-    res.status(200).json({
-      token,
-      user: { name: user.name, email: user.email, isAdmin: user.isAdmin },
+    return res.status(500).json({
+      success: false,
+      message: "An error occurred. Please try again."
     });
-    return;
   }
-  res.status(200).json({
-    token,
-    user: { name: user.name, email: user.email, isAdmin: user.isAdmin },
-  });
 };
 
 const getDashboard = async (req, res) => {
@@ -75,14 +112,65 @@ const getDashboard = async (req, res) => {
 
 const getMe = (req, res) => {
   if (req.user) {
-    return res.status(200).json({ user: req.user });
+    return res.status(200).json({
+      success: true,
+      data: {
+        _id: req.user.id,
+        name: req.user.name,
+        email: req.user.email
+      }
+    });
   }
-  return res.status(401).json({ message: "Unauthorized" });
+  return res.status(401).json({
+    success: false,
+    message: "Unauthorized"
+  });
 };
 
-const getLogout = (req, res) => {
-  req.session.destroy();
-  res.redirect("/login");
+const refreshToken = async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(401).json({
+      success: false,
+      message: "Refresh token required"
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+
+    const accessToken = jwt.sign(
+      {
+        id: decoded.id,
+        email: decoded.email,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1h",
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        accessToken
+      }
+    });
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid refresh token"
+    });
+  }
+};
+
+const logout = (req, res) => {
+  // In a stateless JWT setup, logout is handled client-side by removing tokens
+  return res.status(200).json({
+    success: true,
+    message: "Logout successful"
+  });
 };
 
 module.exports = {
@@ -90,6 +178,7 @@ module.exports = {
   getLogin,
   login,
   getDashboard,
-  getLogout,
+  logout,
   getMe,
+  refreshToken,
 };
