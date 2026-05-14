@@ -447,7 +447,7 @@ const scannerController = {
    */
   confirmPendingScan: async (req, res, next) => {
     try {
-      const { id, alias, confidentialityLevel = 'internal', description, format, tags } = req.body;
+      const { id, alias, confidentialityLevel = 'internal', description, format = 'pdf', tags } = req.body;
       const user = req.user;
 
       console.log('[DEBUG] confirmPendingScan called, id:', id);
@@ -460,9 +460,7 @@ const scannerController = {
         });
       }
 
-      if (!format) {
-        format = 'pdf';
-      }
+
       if (!['pdf', 'jpg', 'jpeg', 'png'].includes(format.toLowerCase())) {
         return res.status(400).json({
           success: false,

@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
-const logger = require("./config/logger");
-const { validateOrigin, ALLOWED_ORIGINS } = require("./config/cors");
+const logger = require("./logger");
+const { validateOrigin, ALLOWED_ORIGINS } = require("./cors");
 
 /**
  * PRODUCTION-GRADE SOCKET.IO CONFIGURATION
