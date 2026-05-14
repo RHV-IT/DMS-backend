@@ -16,8 +16,19 @@ const checkAuth = require("./middlewares/cheackAuth");
 const authRoutes = require("./routes/auth.routes");
 const adminRoutes = require("./routes/admin.routes");
 const userRoutes = require("./routes/user.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
+const notificationsRoutes = require("./routes/notifications.routes");
+const scannerRoutes = require("./routes/scanner.routes");
 //database connection
 const db = require("./database/documentRepository.db");
+
+// DEBUGGING: Verify routes are loaded
+console.log("Auth routes loaded:", typeof authRoutes);
+console.log("Admin routes loaded:", typeof adminRoutes);
+console.log("User routes loaded:", typeof userRoutes);
+console.log("Dashboard routes loaded:", typeof dashboardRoutes);
+console.log("Notifications routes loaded:", typeof notificationsRoutes);
+console.log("Scanner routes loaded:", typeof scannerRoutes);
 
 const app = express();
 
@@ -82,10 +93,28 @@ app.use(express.urlencoded({ extended: false }));
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/user', checkAuth, userRoutes);
 app.use("/api/v1/admin", checkAuth, adminRoutes);
+app.use('/api/v1/dashboard', checkAuth, dashboardRoutes);
+app.use('/api/v1/notifications', checkAuth, notificationsRoutes);
+app.use('/api/v1/scanner', checkAuth, scannerRoutes);
 
-// Fallback route for debugging
+// TEST ROUTE for debugging
+app.get("/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Test route working",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Catch-all 404 handler - MUST BE LAST
 app.use((req, res) => {
-  res.status(404).json({ message: 'Route not found' });
+  console.log("404 - Route not found:", req.method, req.path);
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+    path: req.path,
+    method: req.method
+  });
 });
 
 // Global error handler
