@@ -9,7 +9,7 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // allow non-browser requests
+    // allow non-browser requests (like mobile apps or curl)
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin)) {
@@ -21,14 +21,7 @@ const corsOptions = {
 
   credentials: true,
 
-  methods: [
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "OPTIONS",
-  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 
   allowedHeaders: [
     "Origin",
@@ -39,20 +32,16 @@ const corsOptions = {
     "x-browser",
     "x-device",
     "x-client-type",
+    "x-platform", // <--- Added this to fix your specific error
   ],
 
-  exposedHeaders: [
-    "Authorization",
-    "Content-Length",
-    "Content-Type",
-  ],
+  exposedHeaders: ["Authorization", "Content-Length", "Content-Type"],
 
   optionsSuccessStatus: 200,
 };
 
 const corsMiddleware = cors(corsOptions);
 
-// Export the CORS middleware
 module.exports = corsMiddleware;
 module.exports.corsOptions = corsOptions;
 module.exports.allowedOrigins = allowedOrigins;
