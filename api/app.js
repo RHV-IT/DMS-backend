@@ -12,7 +12,6 @@ process.on('uncaughtException', (err) => {
 // dependencies
 const express = require("express");
 const checkAuth = require("./middlewares/cheackAuth");
-const corsConfig = require("./src/config/cors");
 //routes
 const authRoutes = require("./routes/auth.routes");
 const adminRoutes = require("./routes/admin.routes");
@@ -22,8 +21,47 @@ const db = require("./database/documentRepository.db");
 
 const app = express();
 
-// Middleware to ensure database connection
+// DYNAMIC CORS MIDDLEWARE - accepts ANY requested headers automatically
+const allowedOrigins = [
+  "https://rhv-dms.vercel.app",
+  "http://192.168.0.153:3000",
+  "http://docmanager.rhv",
+  "http://localhost:3000"
+];
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
+
+  res.header(
+    "Access-Control-Allow-Headers",
+    req.headers["access-control-request-headers"] || "*"
+  );
+
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
+
+  res.header("Access-Control-Allow-Credentials", "true");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
+// Middleware to ensure database connection (AFTER CORS)
 app.use(async (req, res, next) => {
+  // Skip database connection for OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   try {
     await db.ensureConnected();
     next();
@@ -36,11 +74,7 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Setup CORS middleware at the top
-app.use(corsConfig);
-app.options('*', corsConfig);
-
-// middleware to parse incoming request bodies
+// middleware to parse incoming request bodies (AFTER CORS and DB)
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: false }));
 
