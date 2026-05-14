@@ -3,18 +3,18 @@ const router = express.Router();
 const userController = require("../controllers/user.controller");
 const fileUploadMiddleware = require("../middlewares/file-upload-middleware");
 
-router.post("/api/upload", fileUploadMiddleware, userController.uploadFile);
+router.post("/upload", fileUploadMiddleware, userController.uploadFile);
 
-router.get("/api/download/:id", userController.downloadFile);
+router.get("/download/:id", userController.downloadFile);
 
-router.get("/api/view/:id", userController.viewFile);
+router.get("/view/:id", userController.viewFile);
 
-router.get("/api/v1/files/:fileId/preview", userController.previewFile);
+router.get("/files/:fileId/preview", userController.previewFile);
 
-router.get("/api/delete/:id", userController.deleteFile);
+router.get("/delete/:id", userController.deleteFile);
 
-router.get("/api/archive", userController.getArchive);
+router.get("/archive", userController.getArchive);
 
-router.get("/api/files", userController.getFiles);
+router.get("/files", userController.getFiles);
 
 module.exports = router;

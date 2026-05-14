@@ -23,44 +23,14 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: false }));
 
 // routes
-app.use(authRoutes);
+app.use('/api/v1/auth', authRoutes);
 app.use(checkAuth);
-app.use(userRoutes);
-app.use("/api/admin", adminRoutes);
+app.use('/api/v1/user', userRoutes);
+app.use("/api/v1/admin", adminRoutes);
 
 // 404 handler
 app.use(notFoundMiddleware);
 // internal server error handler
 app.use(serverErrorMiddleware);
 
-// Replace with your actual Render URL
-const API_URL = "https://document-repository-react.onrender.com/api/health";
-
-const startKeepAlive = () => {
-  // 600000ms = 10 minutes
-  setInterval(async () => {
-    try {
-      const response = await fetch(API_URL);
-      if (response.ok) {
-        console.log(`Keep-alive success: ${response.status}`);
-      }
-    } catch (error) {
-      console.error("Keep-alive failed:", error.message);
-    }
-  }, 600000);
-};
-
-// Start the loop
-startKeepAlive();
-
-const PORT = process.env.PORT || 5000;
-
-db.connect()
-  .then(() => {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log("connected to database and started the server");
-    });
-  })
-  .catch((err) => {
-    console.error("Failed to connect to database", err);
-  });
+module.exports = app;

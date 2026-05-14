@@ -4,15 +4,15 @@ const authController = require("../controllers/auth.controller");
 
 router.get("/", authController.get);
 
-router.get("/api/login", authController.getLogin);
+router.get("/login", authController.getLogin);
 
-router.post("/api/login", authController.login);
+router.post("/login", authController.login);
 
-router.get("/api/logout", authController.getLogout);
+router.get("/logout", authController.getLogout);
 
-router.get("/api/dashboard", authController.getDashboard);
+router.get("/dashboard", authController.getDashboard);
 
-router.get("/api/health", (req, res) =>
+router.get("/health", (req, res) =>
   res.status(200).json({ message: "server kept alive" }),
 );
 
