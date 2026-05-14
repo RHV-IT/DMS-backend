@@ -184,23 +184,33 @@ jobs:
 
       # ---- Option B: Deploy to Vercel ----
       - name: Deploy to Vercel
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          npm install -g vercel
-          vercel --prod --yes --token ${{ secrets.VERCEL_TOKEN }}
+          if [ -n "$VERCEL_TOKEN" ]; then
+            npm install -g vercel
+            vercel --prod --yes --token $VERCEL_TOKEN
+          else
+            echo "VERCEL_TOKEN not set, skipping Vercel deployment"
+          fi
 
       # ---- Option C: Trigger a webhook / deployment pipeline ----
       - name: Trigger deployment webhook
-        if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' && secrets.VERCEL_TOKEN == '' }}
         run: |
-          curl -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "ref": "${{ github.ref }}",
-              "sha": "${{ github.sha }}",
-              "repository": "${{ github.repository }}",
-              "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-            }'
+          if [ -n "$DEPLOY_WEBHOOK_URL" ] && [ -z "$VERCEL_TOKEN" ]; then
+            curl -X POST "$DEPLOY_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "ref": "'$GITHUB_REF'",
+                "sha": "'$GITHUB_SHA'",
+                "repository": "'$GITHUB_REPOSITORY'",
+                "image": "'$REGISTRY'/'$IMAGE_NAME':'$GITHUB_SHA'"
+              }'
+          else
+            echo "DEPLOY_WEBHOOK_URL not set or VERCEL_TOKEN set, skipping webhook"
+          fi
 
   # ------------------------------------------------------------
   # 5) Docker Compose Validation (lint check)
