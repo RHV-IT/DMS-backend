@@ -154,7 +154,7 @@ jobs:
             NODE_ENV=production
 
   # ------------------------------------------------------------
-  # 4) Deploy (manual trigger / auto on main)
+  # 4) Deploy (auto on main)
   # ------------------------------------------------------------
   deploy:
     name: Deploy to Production
@@ -168,21 +168,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---- Option A: SSH into server and redeploy (uncomment & configure) ----
-      # - name: Deploy via SSH
-      #   uses: appleboy/ssh-action@v1
-      #   with:
-      #     host: ${{ secrets.DEPLOY_HOST }}
-      #     username: ${{ secrets.DEPLOY_USER }}
-      #     key: ${{ secrets.DEPLOY_SSH_KEY }}
-      #     script: |
-      #       cd /opt/dms-backend
-      #       git pull origin main
-      #       docker-compose pull
-      #       docker-compose up -d --build
-      #       docker image prune -f
-
-      # ---- Option B: Deploy to Vercel ----
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -196,24 +181,8 @@ jobs:
             echo "VERCEL_TOKEN not set, skipping Vercel deployment"
           fi
 
-      # ---- Option C: Trigger a webhook / deployment pipeline ----
-      - name: Trigger deployment webhook
-        run: |
-          if [ -n "$DEPLOY_WEBHOOK_URL" ] && [ -z "$VERCEL_TOKEN" ]; then
-            curl -X POST "$DEPLOY_WEBHOOK_URL" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "ref": "'$GITHUB_REF'",
-                "sha": "'$GITHUB_SHA'",
-                "repository": "'$GITHUB_REPOSITORY'",
-                "image": "'$REGISTRY'/'$IMAGE_NAME':'$GITHUB_SHA'"
-              }'
-          else
-            echo "DEPLOY_WEBHOOK_URL not set or VERCEL_TOKEN set, skipping webhook"
-          fi
-
   # ------------------------------------------------------------
-  # 5) Docker Compose Validation (lint check)
+  # 5) Docker Compose Validation
   # ------------------------------------------------------------
   compose-check:
     name: Validate Docker Compose
@@ -223,12 +192,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install docker-compose (standalone)
-        run: |
-          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
-            -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Validate docker-compose.yml
         run: docker compose config --quiet
