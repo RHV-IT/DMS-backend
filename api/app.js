@@ -11,24 +11,33 @@ process.on('uncaughtException', (err) => {
 
 // dependencies
 const express = require("express");
-const checkAuth = require("./middlewares/cheackAuth");
-//routes
-const authRoutes = require("./routes/auth.routes");
-const adminRoutes = require("./routes/admin.routes");
-const userRoutes = require("./routes/user.routes");
-const dashboardRoutes = require("./routes/dashboard.routes");
-const notificationsRoutes = require("./routes/notifications.routes");
-const scannerRoutes = require("./routes/scanner.routes");
+//routes from api/src/routes/ (the complete implementation)
+const srcAuthRoutes = require("./src/routes/auth.routes");
+const srcUserRoutes = require("./src/routes/user.routes");
+const srcFileRoutes = require("./src/routes/file.routes");
+const srcLogRoutes = require("./src/routes/log.routes");
+const srcDashboardRoutes = require("./src/routes/dashboard.routes");
+const srcNotificationRoutes = require("./src/routes/notification.routes");
+const srcScannerRoutes = require("./src/routes/scanner.routes");
+const srcAgentRoutes = require("./src/routes/agent.routes");
+const srcPermissionRoutes = require("./src/routes/permission.routes");
+const srcSettingsRoutes = require("./src/routes/settings.routes");
+const srcPendingScanRoutes = require("./src/routes/pendingScan.routes");
 //database connection
 const db = require("./database/documentRepository.db");
 
 // DEBUGGING: Verify routes are loaded
-console.log("Auth routes loaded:", typeof authRoutes);
-console.log("Admin routes loaded:", typeof adminRoutes);
-console.log("User routes loaded:", typeof userRoutes);
-console.log("Dashboard routes loaded:", typeof dashboardRoutes);
-console.log("Notifications routes loaded:", typeof notificationsRoutes);
-console.log("Scanner routes loaded:", typeof scannerRoutes);
+console.log("Auth routes loaded:", typeof srcAuthRoutes);
+console.log("User routes loaded:", typeof srcUserRoutes);
+console.log("File routes loaded:", typeof srcFileRoutes);
+console.log("Log routes loaded:", typeof srcLogRoutes);
+console.log("Dashboard routes loaded:", typeof srcDashboardRoutes);
+console.log("Notification routes loaded:", typeof srcNotificationRoutes);
+console.log("Scanner routes loaded:", typeof srcScannerRoutes);
+console.log("Agent routes loaded:", typeof srcAgentRoutes);
+console.log("Permission routes loaded:", typeof srcPermissionRoutes);
+console.log("Settings routes loaded:", typeof srcSettingsRoutes);
+console.log("PendingScan routes loaded:", typeof srcPendingScanRoutes);
 
 const app = express();
 
@@ -89,13 +98,39 @@ app.use(async (req, res, next) => {
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: false }));
 
-// routes (prefixed with /api to match Vercel rewrite)
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/user', checkAuth, userRoutes);
-app.use("/api/v1/admin", checkAuth, adminRoutes);
-app.use('/api/v1/dashboard', checkAuth, dashboardRoutes);
-app.use('/api/v1/notifications', checkAuth, notificationsRoutes);
-app.use('/api/v1/scanner', checkAuth, scannerRoutes);
+// MOUNT ALL SRC ROUTES (these have their own auth middleware built-in)
+console.log("Mounted auth routes");
+app.use('/api/v1/auth', srcAuthRoutes);
+
+console.log("Mounted users routes");
+app.use('/api/v1/users', srcUserRoutes);
+
+console.log("Mounted files routes");
+app.use('/api/v1/files', srcFileRoutes);
+
+console.log("Mounted logs routes");
+app.use('/api/v1/logs', srcLogRoutes);
+
+console.log("Mounted dashboard routes");
+app.use('/api/v1/dashboard', srcDashboardRoutes);
+
+console.log("Mounted notifications routes");
+app.use('/api/v1/notifications', srcNotificationRoutes);
+
+console.log("Mounted scanner routes");
+app.use('/api/v1/scanner', srcScannerRoutes);
+
+console.log("Mounted agents routes");
+app.use('/api/v1/agents', srcAgentRoutes);
+
+console.log("Mounted permissions routes");
+app.use('/api/v1/permissions', srcPermissionRoutes);
+
+console.log("Mounted settings routes");
+app.use('/api/v1/settings', srcSettingsRoutes);
+
+console.log("Mounted pending-scans routes");
+app.use('/api/v1/pending-scans', srcPendingScanRoutes);
 
 // TEST ROUTE for debugging
 app.get("/test", (req, res) => {
