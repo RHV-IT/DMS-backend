@@ -23,6 +23,7 @@ const srcAgentRoutes = require("./src/routes/agent.routes");
 const srcPermissionRoutes = require("./src/routes/permission.routes");
 const srcSettingsRoutes = require("./src/routes/settings.routes");
 const srcPendingScanRoutes = require("./src/routes/pendingScan.routes");
+const srcConfigRoutes = require("./src/routes/config.routes");
 //database connection
 const db = require("./database/documentRepository.db");
 
@@ -38,6 +39,7 @@ console.log("Agent routes loaded:", typeof srcAgentRoutes);
 console.log("Permission routes loaded:", typeof srcPermissionRoutes);
 console.log("Settings routes loaded:", typeof srcSettingsRoutes);
 console.log("PendingScan routes loaded:", typeof srcPendingScanRoutes);
+console.log("Config routes loaded:", typeof srcConfigRoutes);
 
 const app = express();
 
@@ -120,6 +122,10 @@ app.use('/api/v1/notifications', srcNotificationRoutes);
 console.log("Mounted scanner routes");
 app.use('/api/v1/scanner', srcScannerRoutes);
 
+// Mount pending scan routes under scanner for /api/v1/scanner/pending
+console.log("Mounted pending scans under scanner routes");
+app.use('/api/v1/scanner', srcPendingScanRoutes);
+
 console.log("Mounted agents routes");
 app.use('/api/v1/agents', srcAgentRoutes);
 
@@ -129,8 +135,8 @@ app.use('/api/v1/permissions', srcPermissionRoutes);
 console.log("Mounted settings routes");
 app.use('/api/v1/settings', srcSettingsRoutes);
 
-console.log("Mounted pending-scans routes");
-app.use('/api/v1/pending-scans', srcPendingScanRoutes);
+console.log("Mounted config routes");
+app.use('/api/v1/config', srcConfigRoutes);
 
 // TEST ROUTE for debugging
 app.get("/test", (req, res) => {
