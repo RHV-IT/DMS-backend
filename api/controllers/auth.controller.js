@@ -40,12 +40,12 @@ const login = async (req, res) => {
       res.status(401).json({ error: "Invalid username or password" });
       return;
     }
+    token = User.generateAuthToken(user);
   } catch (error) {
     console.error("Error during login:", error);
     res.status(500).json({ error: "An error occurred. Please try again." });
     return;
   }
-  token = User.generateAuthToken(user);
 
   if (user.isAdmin) {
     res.status(200).json({

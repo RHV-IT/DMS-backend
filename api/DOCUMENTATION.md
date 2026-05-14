@@ -12,6 +12,7 @@
 9. [Settings (Admin Only)](#settings-admin-only)
 10. [Scanner Upload](#scanner-upload)
 11. [Common Info](#common-info)
+12. [Vercel Deployment](#vercel-deployment)
 
 ---
 
@@ -24,51 +25,70 @@
 
 ### CORS Configuration
 
-The backend is configured to accept cross-origin requests from multiple origins:
+The backend is configured to accept cross-origin requests from multiple origins. CORS is enforced at **two levels** — Vercel edge headers and Express middleware — to handle both production (serverless) and development (local) environments.
 
-**Allowed Origins:**
-- `https://www.epilux.com.ng`
-- `https://epilux.com.ng`
-- `https://epilux48.vercel.app`
-- `https://rhv-dms.vercel.app` (Frontend)
-- `https://rhv-dms-backend.vercel.app` (Backend)
-- `http://localhost:3000`
-- `http://localhost:5173`
-- `http://127.0.0.1:3000`
-- `http://127.0.0.1:5173`
-- `http://192.168.4.213:3000`
-- `http://192.168.2.53:3000`
-- `http://192.168.7.13:3000`
-- `*` (wildcard - allows all origins)
+#### Allowed Origins
 
-**Dynamic Origins:**
-- Development: Any `localhost` or `127.0.0.1` on any port
-- Production: Any subdomain of `epilux.com.ng` or `vercel.app`
+Requests are accepted from the following whitelisted origins:
 
-**Configuration:**
+- `https://rhv-dms.vercel.app` — Production frontend
+- `http://docmanager.rhv` — Internal network alias
+- `http://192.168.0.153:3000` — Local network frontend
+- `http://localhost:3000` — Local development
+
+#### Vercel Edge Configuration (`vercel.json`)
+
+Vercel sets CORS headers at the edge layer for all `/api/*` requests:
+
+- **`Access-Control-Allow-Origin`**: `https://rhv-dms.vercel.app`
+- **`Access-Control-Allow-Credentials`**: `true`
+- **`Access-Control-Allow-Methods`**: `GET,OPTIONS,PATCH,DELETE,POST,PUT`
+- **`Access-Control-Allow-Headers`**: `Content-Type, Authorization, x-platform, x-browser, x-device, x-client-type`
+
+If you need additional custom headers, add them to the `Access-Control-Allow-Headers` value in `vercel.json`.
+
+#### Express CORS Middleware (`api/src/config/cors.js`)
+
+The Express app applies its own CORS middleware as the first middleware to handle dynamic origin validation and preflight requests:
+
 ```javascript
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allows Postman/mobile apps (no origin)
-    // Allows exact matches from allowedOrigins
-    // Dynamically allows localhost in development
-    // Dynamically allows epilux domains in production
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin', 'X-Requested-With', 'Content-Type', 'Accept',
+    'Authorization', 'x-browser', 'x-device', 'x-client-type', 'x-platform'
+  ],
+  optionsSuccessStatus: 200
 };
 ```
+
+**Key points:**
+- **Dynamic origin check**: Uses a whitelist; `!origin` allows server-to-server and Postman requests (no `Origin` header).
+- **`x-platform` is explicitly whitelisted**: Required by the frontend for device/browser detection headers.
+- **`credentials: true`**: Enables cookies and `Authorization` headers in cross-origin requests.
+- **Preflight handled**: `app.options('*', corsConfig)` ensures `OPTIONS` requests return the correct CORS headers.
+
+**Both layers must agree.** If a header is allowed in the Express middleware but blocked by Vercel edge headers (or vice versa), the browser will reject the request. Keep both configurations in sync.
 
 ### Troubleshooting Network Errors
 
 If you encounter "Axios Network Error" or "Provisional headers are shown":
 
-1. **Verify CORS is enabled** - The backend must have CORS middleware before routes
-2. **Check middleware order** - CORS → JSON parsing → Routes
-3. **Preflight requests** - Browser sends OPTIONS before POST/PUT requests
-4. **Credentials** - If using `withCredentials: true`, origin must be specific (not `*`)
-5. **Port mismatch** - Ensure frontend calls `http://localhost:5000`, not port 3000
+1. **Verify CORS is enabled** — The backend must have CORS middleware before routes
+2. **Check middleware order** — CORS → JSON parsing → Routes
+3. **Preflight requests** — Browser sends `OPTIONS` before `POST`/`PUT` requests; ensure the server responds with 200
+4. **Credentials** — If using `withCredentials: true`, origin must be specific (not `*`)
+5. **Port mismatch** — Ensure frontend calls `http://localhost:5000`, not port 3000
+6. **Custom headers** — If adding a new header like `x-platform`, verify it appears in **both** `vercel.json` headers and `cors.js` `allowedHeaders`
+7. **Vercel deploy** — After changing `vercel.json`, redeploy — edge config is not hot-reloaded
 
 ### API Base URL
 
@@ -2376,3 +2396,123 @@ All error responses follow this format:
 | internal | Department members only |
 | confidential | Restricted access |
 | highly_confidential | Admin only |
+
+---
+
+## 12. Vercel Deployment
+
+This backend is deployed on Vercel as a Serverless Function. Below are the critical configuration files and their roles.
+
+### `vercel.json` (Project Root)
+
+Routes all `/api/*` requests to the Express app and sets CORS headers at the Vercel edge layer.
+
+```json
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/app.js"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://rhv-dms.vercel.app"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization, x-platform, x-browser, x-device, x-client-type"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### `api/app.js` (Express Entry Point)
+
+Main Express application file. Loaded by Vercel as a serverless function.
+
+| Requirement | Implementation |
+|-------------|---------------|
+| Environment variables | `require('dotenv').config()` as **line 1** |
+| CORS | `corsConfig` imported from `./src/config/cors`, used as first middleware |
+| Route prefix | All routes prefixed with `/api` (e.g., `app.use('/api/v1/auth', authRoutes)`) |
+| 404 fallback | `app.use((req, res) => res.status(404).json(...))` |
+| Global error handler | `app.use((err, req, res, next) => console.error("🔥 Server Error:", err.stack))` |
+| Export pattern | `module.exports = app` for Vercel compatibility |
+
+**Critical — Middleware order:**
+
+```
+1. dotenv.config()           Load .env before anything else
+2. process.on('unhandled...') Global promise/exception logging
+3. corsConfig                CORS headers (must be first middleware)
+4. express.json()            Body parsing
+5. express.urlencoded()      URL-encoded body parsing
+6. /api/v1/auth              Auth routes
+7. /api/v1/user              User routes (guarded by checkAuth)
+8. /api/v1/admin             Admin routes (guarded by checkAuth)
+9. 404 fallback              Catches unmatched routes
+10. Global error handler      Catches all thrown errors
+```
+
+### `api/src/config/cors.js` (CORS Middleware)
+
+Dynamic origin whitelist used by the Express app:
+
+| Origin | Purpose |
+|--------|---------|
+| `https://rhv-dms.vercel.app` | Production frontend |
+| `http://192.168.0.153:3000` | Local network frontend |
+| `http://localhost:3000` | Local development |
+| `http://docmanager.rhv` | Internal network alias |
+
+Headers explicitly whitelisted: `x-platform`, `x-browser`, `x-device`, `x-client-type`, `Content-Type`, `Authorization`.
+
+### Common Vercel Issues & Fixes
+
+#### 1. 404 "Cannot GET /api/v1/auth/me"
+
+- **Cause**: Vercel rewrite not reaching Express, OR Express route not matching.
+- **Fix**: Verify `vercel.json` rewrite `source: "/api/(.*)"` → `destination: "/api/app.js"`. Ensure Express routes are prefixed with `/api` (e.g., `app.use('/api/v1/auth', ...)`).
+
+#### 2. CORS / Custom Header Blocked
+
+- **Cause**: Custom headers (like `x-platform`) missing from Vercel edge headers or Express CORS middleware.
+- **Fix**: Add the header to both:
+  - `vercel.json` → `Access-Control-Allow-Headers`
+  - `cors.js` → `allowedHeaders`
+
+#### 3. JWT `secretOrPrivateKey must have a value`
+
+- **Cause**: Environment variable `JWTSecret` used in code, but `.env` file defines `JWT_SECRET` (underscore).
+- **Fix**: Use `process.env.JWT_SECRET` consistently. `dotenv.config()` must run before any code accesses `process.env`.
+
+#### 4. Terminal Not Showing Error Logs
+
+- **Cause**: Async route handlers throw errors that become unhandled promise rejections, bypassing Express error middleware.
+- **Fix**: The app includes `process.on('unhandledRejection')` and `process.on('uncaughtException')` handlers that log to `console.error`. The global Express error handler at the bottom also logs `err.stack`:
+
+```javascript
+app.use((err, req, res, next) => {
+  console.error("🔥 Server Error:", err.stack);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal Server Error"
+  });
+});
+```

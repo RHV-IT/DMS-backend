@@ -3,7 +3,8 @@ const cors = require("cors");
 const allowedOrigins = [
   "https://rhv-dms.vercel.app",
   "http://192.168.0.153:3000",
-  "http://docmanager.rhv"
+  "http://docmanager.rhv",
+  "http://localhost:3000"
 ];
 
 const corsOptions = {

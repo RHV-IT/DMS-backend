@@ -20,7 +20,7 @@ class User {
         email: user.email,
         isAdmin: user.isAdmin,
       },
-      process.env.JWTSecret,
+      process.env.JWT_SECRET,
       {
         expiresIn: "1h",
       },
