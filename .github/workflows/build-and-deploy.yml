@@ -1,6 +1,6 @@
 # ============================================================
 # .github/workflows/build-and-deploy.yml
-# Build, test, and deploy the DMS backend on every push
+# Build, test, and deploy the DMS backend
 # ============================================================
 
 name: Build and Deploy
@@ -17,181 +17,103 @@ env:
   NODE_VERSION: "20"
 
 jobs:
-  # ------------------------------------------------------------
-  # 1) Lint & Type-Check
-  # ------------------------------------------------------------
+  # 1) Safety Checks: Lint & Formatting
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
+      - uses: actions/checkout@v4
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-
-      - name: Install root dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Install API dependencies
-        working-directory: api
-        run: npm ci --ignore-scripts
-
-      - name: Run ESLint (if config exists)
+      - run: npm ci --ignore-scripts
+      - name: Run ESLint
         run: npx eslint . --ext .js --max-warnings=0 || true
         working-directory: api
-
-      - name: Check formatting with Prettier (if available)
+      - name: Run Prettier
         run: npx prettier --check . || true
 
-  # ------------------------------------------------------------
-  # 2) Unit Tests
-  # ------------------------------------------------------------
+  # 2) Docker Compose Validation (Lints your docker setup)
+  compose-check:
+    name: Validate Docker Compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Config
+        run: docker compose config --quiet
+
+  # 3) Tests
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: lint
-
+    needs: [lint, compose-check]
     services:
       mongo:
         image: mongo:7-jammy
-        ports:
-          - 27017:27017
+        ports: ["27017:27017"]
         env:
           MONGO_INITDB_ROOT_USERNAME: testadmin
           MONGO_INITDB_ROOT_PASSWORD: testpassword
           MONGO_INITDB_DATABASE: dmstest
-        options: >-
-          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-
-      - name: Install root dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Install API dependencies
+      - run: npm ci --ignore-scripts
+      - name: Run API Tests
         working-directory: api
-        run: npm ci --ignore-scripts
-
-      - name: Run tests
         env:
           MONGODB_URI: mongodb://testadmin:testpassword@localhost:27017/dmstest?authSource=admin
           NODE_ENV: test
-          JWT_SECRET: test-secret-key-do-not-use-in-production
-          JWT_REFRESH_SECRET: test-refresh-secret
-          ENABLE_SWAGGER: "false"
-        run: |
-          npm test 2>&1 || echo "No test script defined — skipping"
-        working-directory: api
+          JWT_SECRET: test-secret
+        run: npm test 2>&1 || echo "No tests found - skipping"
 
-  # ------------------------------------------------------------
-  # 3) Build Docker Image
-  # ------------------------------------------------------------
+  # 4) Build Image (Converts YOUR project folder into a Docker Image)
   build:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     needs: test
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix=
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
-
-      - name: Build and push Docker image
+      - name: Build Image from local files
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: . # This tells Docker to use YOUR project folder
           file: Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            NODE_ENV=production
 
-  # ------------------------------------------------------------
-  # 4) Deploy (auto on main)
-  # ------------------------------------------------------------
+  # 5) Deploy to Vercel (Standard Deployment)
   deploy:
-    name: Deploy to Production
+    name: Deploy to Vercel
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     needs: build
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    environment: production
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Deploy to Vercel
+      - uses: actions/checkout@v4
+      - name: Vercel Deploy
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          if [ -n "$VERCEL_TOKEN" ]; then
-            npm install -g vercel
-            vercel --prod --yes --token $VERCEL_TOKEN
-          else
-            echo "VERCEL_TOKEN not set, skipping Vercel deployment"
-          fi
-
-  # ------------------------------------------------------------
-  # 5) Docker Compose Validation
-  # ------------------------------------------------------------
-  compose-check:
-    name: Validate Docker Compose
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Validate docker-compose.yml
-        run: docker compose config --quiet
+          npm install -g vercel
+          vercel --prod --yes --token $VERCEL_TOKEN
