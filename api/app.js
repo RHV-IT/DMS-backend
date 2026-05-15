@@ -122,6 +122,11 @@ app.use('/api/v1/notifications', srcNotificationRoutes);
 console.log("Mounted scanner routes");
 app.use('/api/v1/scanner', srcScannerRoutes);
 
+// Test route for installer upload (no auth)
+app.post('/api/v1/test-upload', (req, res) => {
+  res.json({ success: true, message: 'Test route works' });
+});
+
 // Mount pending scan routes under scanner for /api/v1/scanner/pending
 console.log("Mounted pending scans under scanner routes");
 app.use('/api/v1/scanner', srcPendingScanRoutes);
