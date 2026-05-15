@@ -1,0 +1,79 @@
+# Build and upload scanner installer
+name: Build Scanner Installer
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'scanner-desktop/**'
+  workflow_dispatch:
+
+jobs:
+  build-installer:
+    name: Build and Upload Scanner Installer
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: scanner-desktop/package-lock.json
+
+    - name: Install dependencies
+      working-directory: scanner-desktop
+      run: npm ci
+
+    - name: Create placeholder icons
+      working-directory: scanner-desktop
+      run: |
+        # Create a simple placeholder icon using PowerShell
+        $iconPath = "assets\icon.ico"
+        if (-not (Test-Path $iconPath)) {
+          # Create a simple 256x256 BMP and convert to ICO
+          # For now, just create an empty file as placeholder
+          New-Item -ItemType File -Path $iconPath -Force
+        }
+
+    - name: Build Windows installer
+      working-directory: scanner-desktop
+      run: npm run build:win
+
+    - name: Upload installer to API
+      run: |
+        # Find the installer file
+        $installerPath = Get-ChildItem -Path "scanner-desktop\dist" -Filter "*.exe" | Select-Object -First 1
+        if ($installerPath) {
+          Write-Host "Found installer: $($installerPath.FullName)"
+
+          # Get API URL and token from environment
+          $apiUrl = "https://rhv-dms-backend.vercel.app"
+          $adminToken = "${{ secrets.DMS_ADMIN_TOKEN }}"
+
+          if (-not $adminToken) {
+            Write-Host "DMS_ADMIN_TOKEN secret not set"
+            exit 1
+          }
+
+          # Upload to API
+          try {
+            $response = Invoke-RestMethod -Uri "$apiUrl/api/v1/scanner/upload-installer" -Method POST -Headers @{
+              "Authorization" = "Bearer $adminToken"
+            } -Form @{
+              installer = Get-Item $installerPath.FullName
+              version = "1.0.0"
+              platform = "windows"
+            }
+
+            Write-Host "Upload successful: $($response.message)"
+          } catch {
+            Write-Host "Upload failed: $($_.Exception.Message)"
+            exit 1
+          }
+        } else {
+          Write-Host "No installer found in dist directory"
+          exit 1
+        }

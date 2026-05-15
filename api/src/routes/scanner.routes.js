@@ -2,38 +2,216 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
+const crypto = require('crypto');
+const multer = require('multer');
 const router = express.Router();
 const scannerController = require('../controllers/scannerController');
 const auth = require('../middlewares/authMiddleware');
 const { handleScannedUpload } = require('../middlewares/uploadMiddleware');
+const Installer = require('../models/Installer');
+
+// Multer configuration for installer uploads (store in memory)
+const installerUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB limit for installers
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/octet-stream' || file.originalname.endsWith('.exe')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only executable files are allowed'), false);
+    }
+  }
+});
 
 // Public download endpoints (no auth required)
-router.get('/auto-install-download', (req, res) => {
-  // Serve the Document Scanner installer
-  const installerPath = path.join(__dirname, '../../../scanner-desktop/dist/Document-Scanner-Setup-1.0.0.exe');
+router.get('/installer-info', async (req, res) => {
+  try {
+    const installer = await Installer.findOne({
+      isActive: true,
+      platform: 'windows'
+    }).sort({ version: -1 }).select('name version fileSize downloadCount createdAt');
 
-  if (fs.existsSync(installerPath)) {
-    res.setHeader('Content-Disposition', 'attachment; filename="Document-Scanner-Setup.exe"');
-    res.setHeader('Content-Type', 'application/octet-stream');
+    if (installer) {
+      return res.json({
+        success: true,
+        installer: {
+          name: installer.name,
+          version: installer.version,
+          size: installer.fileSize,
+          downloads: installer.downloadCount,
+          uploadedAt: installer.createdAt
+        }
+      });
+    }
 
-    const fileStream = fs.createReadStream(installerPath);
-    fileStream.pipe(res);
+    res.status(404).json({
+      success: false,
+      message: 'No active installer found'
+    });
+  } catch (error) {
+    console.error('Error getting installer info:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get installer info'
+    });
+  }
+});
 
-    fileStream.on('error', (err) => {
-      console.error('Error streaming installer:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ success: false, message: 'Failed to download installer' });
+router.get('/auto-install-download', async (req, res) => {
+  try {
+    // Find the active installer
+    const installer = await Installer.findOne({
+      isActive: true,
+      platform: 'windows'
+    }).sort({ version: -1 });
+
+    if (installer) {
+      // Return JSON response with download URL for frontend
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      res.json({
+        success: true,
+        downloadUrl: `${baseUrl}/api/v1/scanner/auto-install-download/direct`,
+        version: installer.version,
+        size: installer.fileSize,
+        name: installer.name
+      });
+      return;
+    }
+
+    res.status(404).json({
+      success: false,
+      message: 'Installer not available'
+    });
+  } catch (error) {
+    console.error('Error serving installer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to serve installer'
+    });
+  }
+});
+
+// Direct binary download endpoint
+router.get('/auto-install-download/direct', async (req, res) => {
+  try {
+    // Find the active installer
+    const installer = await Installer.findOne({
+      isActive: true,
+      platform: 'windows'
+    }).sort({ version: -1 });
+
+    if (installer) {
+      // Increment download count
+      await Installer.findByIdAndUpdate(installer._id, {
+        $inc: { downloadCount: 1 }
+      });
+
+      // Set headers for file download
+      res.setHeader('Content-Disposition', `attachment; filename="${installer.name}"`);
+      res.setHeader('Content-Type', installer.mimeType);
+      res.setHeader('Content-Length', installer.fileSize);
+      res.setHeader('X-Installer-Version', installer.version);
+
+      // Send the binary data
+      res.send(installer.data);
+      return;
+    }
+
+    // Installer not available
+    res.status(404).json({
+      success: false,
+      message: 'Installer not available'
+    });
+  } catch (error) {
+    console.error('Error serving installer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to serve installer'
+    });
+  }
+});
+
+// Protected endpoint for uploading installers
+router.post('/upload-installer', auth, installerUpload.single('installer'), async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can upload installers'
+      });
+    }
+
+    if (!req.files || !req.files.installer) {
+      return res.status(400).json({
+        success: false,
+        message: 'No installer file provided'
+      });
+    }
+
+    const installerFile = req.files.installer;
+    const version = req.body.version || '1.0.0';
+    const platform = req.body.platform || 'windows';
+
+    // Validate file type (should be executable)
+    if (!installerFile.name.endsWith('.exe')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Installer must be a .exe file'
+      });
+    }
+
+    // Calculate checksum
+    const checksum = crypto.createHash('sha256').update(installerFile.data).digest('hex');
+
+    // Check if this exact installer already exists
+    const existing = await Installer.findOne({ checksum });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'This installer version already exists'
+      });
+    }
+
+    // Deactivate previous installers for this platform
+    await Installer.updateMany(
+      { platform, isActive: true },
+      { isActive: false }
+    );
+
+    // Create new installer record
+    const newInstaller = new Installer({
+      name: installerFile.name,
+      version,
+      platform,
+      fileSize: installerFile.size,
+      mimeType: installerFile.mimetype || 'application/octet-stream',
+      data: installerFile.data,
+      checksum,
+      uploadedBy: req.user._id
+    });
+
+    await newInstaller.save();
+
+    res.json({
+      success: true,
+      message: 'Installer uploaded successfully',
+      installer: {
+        name: newInstaller.name,
+        version: newInstaller.version,
+        size: newInstaller.fileSize,
+        checksum: newInstaller.checksum
       }
     });
-    return;
+  } catch (error) {
+    console.error('Error uploading installer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload installer'
+    });
   }
-
-  // If installer not built yet, return helpful message
-  res.status(404).json({
-    success: false,
-    message: 'Document Scanner installer is being prepared. Please check back in a few minutes or contact your administrator.'
-  });
 });
+
 
 router.get('/agent-download', (req, res) => {
   const agentPath = path.join(__dirname, '../../../agent/scanner-agent.js');
