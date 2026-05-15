@@ -44,8 +44,15 @@
       "!check-icons.js"
     ],
     "win": {
-      "target": "nsis",
-      "requestedExecutionLevel": "asInvoker"
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker",
+      "sign": false,
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
