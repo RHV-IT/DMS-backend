@@ -89,9 +89,8 @@ const fileSchema = new mongoose.Schema({
   }
 });
 
-fileSchema.pre('save', function(next) {
+fileSchema.pre('save', function() {
   this.updatedAt = new Date();
-  next();
 });
 
 module.exports = mongoose.model('File', fileSchema);

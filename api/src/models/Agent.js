@@ -59,9 +59,8 @@ const agentSchema = new mongoose.Schema({
 });
 
 // Update lastActive on save
-agentSchema.pre('save', function(next) {
+agentSchema.pre('save', function() {
   this.lastActive = new Date();
-  next();
 });
 
 module.exports = mongoose.model('Agent', agentSchema);
