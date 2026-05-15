@@ -1,60 +1,130 @@
-# Document Scanner Desktop
+# RHV Scanner Agent - Windows Desktop Build
 
-A beginner-friendly document scanner application that automatically monitors a folder and uploads scanned documents.
+## Prerequisites
 
-## Features
+- Node.js 18+ and npm
+- Windows 10/11 for building
+- Git
 
-- **Silent Operation**: No terminal windows or command prompts
-- **Automatic Monitoring**: Watches document folder for new files
-- **GUI Installer**: Standard Windows installer with Next/Next/Finish
-- **System Tray**: Runs in background with status indicators
-- **Auto-Start**: Launches automatically with Windows
-- **Settings GUI**: Easy configuration through graphical interface
-
-## Building the Installer
-
-### Prerequisites
-
-- Node.js 18+
-- npm
-
-### Build Steps
+## Development Setup
 
 ```bash
 # Install dependencies
 npm install
 
-# Build Windows installer
-npm run build:win
+# Run in development mode
+npm run dev
 ```
 
-### Output
+## Building the Windows Installer
 
+### Step 1: Install Dependencies
+```bash
+npm install
+```
+
+### Step 2: Build the Application
+```bash
+npm run build
+```
+
+### Step 3: Output Location
 The installer will be created at:
 ```
-scanner-desktop/dist/Document-Scanner-Setup-1.0.0.exe
+scanner-desktop/dist/RHV Scanner Agent Setup 1.0.0.exe
 ```
 
-## Installation Experience
+## Installation Process
 
-1. **Download**: `Document-Scanner-Setup.exe`
-2. **Install**: Standard Windows wizard (Next/Next/Finish)
-3. **Setup**: App opens login/setup window
-4. **Login**: User signs in via web browser
-5. **Ready**: App runs silently in system tray
+The generated installer provides a standard Windows setup wizard:
 
-## User Experience
+1. **Welcome Screen**: Introduction to RHV Scanner Agent
+2. **Installation Location**: Automatic (user's AppData)
+3. **Installation Progress**: Shows progress bar
+4. **Completion**: Success message with launch option
 
-- **First Run**: Setup window guides user through login
-- **Normal Use**: App runs in tray, monitors documents folder
-- **Settings**: Right-click tray icon → Open Settings
-- **Status**: Tray icon shows connection and activity status
+The installer will automatically:
+- Extract all files to user's AppData directory
+- Create desktop shortcut
+- Create start menu entry
+- Set up auto-start with Windows login
+- Create required directories:
+  - `Documents/RHV Scanner`
 
-## Technical Details
+## End User Experience
 
-- Built with Electron
-- Uses NSIS for Windows installer
-- Auto-starts with Windows login
-- Monitors folder with chokidar
-- Secure token storage
-- Automatic reconnection
+After installation:
+1. **Auto-start**: App launches automatically with Windows
+2. **System Tray**: App runs in background with status icon
+3. **File Monitoring**: Watches `Documents/RHV Scanner` folder
+4. **Dashboard**: Right-click tray icon → Open Dashboard
+5. **Local Server**: Runs on http://localhost:4001/health
+
+## Configuration
+
+The app automatically:
+- Generates unique machine ID
+- Creates scan directory in Documents
+- Provides GUI dashboard for settings
+
+## Testing the Build
+
+### Local Testing
+```bash
+# Install the built exe on your machine
+# Check system tray for RHV Scanner Agent icon
+# Place a PDF in Documents/RHV Scanner
+# Check localhost:4001/health endpoint
+```
+
+### API Testing
+```bash
+# Check health endpoint
+curl http://localhost:4001/health
+
+# Should return:
+{
+  "status": "running",
+  "machineId": "machine-xxxx",
+  "scanDirectory": "C:\\Users\\user\\Documents\\RHV Scanner",
+  "timestamp": "2026-05-15T...",
+  "version": "1.0.0"
+}
+```
+
+## Icons
+
+Replace the placeholder files in `assets/` with actual icons:
+- `assets/icon.png` - 512x512 PNG for main app
+- `assets/tray-icon.png` - 32x32 PNG for system tray
+
+## Distribution
+
+- **File**: `RHV Scanner Agent Setup.exe`
+- **Size**: ~150MB (includes bundled Node.js runtime)
+- **Requirements**: Windows 10/11, no admin rights needed
+- **Installation**: Standard Windows installer wizard
+
+## Troubleshooting
+
+### Build Fails
+```bash
+# Clean and rebuild
+rm -rf dist node_modules
+npm install
+npm run build
+```
+
+### Icons Missing
+The app will use default Electron icons if custom icons are missing.
+
+### Permission Issues
+Run the build command as administrator if needed.
+
+## Security Notes
+
+- JWT tokens stored in user config files
+- No sensitive data in logs
+- HTTPS communication with backend
+- Machine IDs are UUID-based
+- Files uploaded only after user authentication

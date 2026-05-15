@@ -1,31 +1,20 @@
 {
-  "name": "rhv-dms-scanner-desktop",
+  "name": "rhv-scanner-agent",
   "version": "1.0.0",
-  "description": "Document Scanner Agent - Automatically scan and upload documents to DMS",
+  "description": "RHV Scanner Agent - Document scanning and upload agent",
   "main": "main.js",
   "homepage": "https://rhv-dms.vercel.app",
-  "type": "commonjs",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev",
+    "dev": "electron .",
     "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "dist": "electron-builder --publish=never",
-    "test": "echo \"No tests specified\" && exit 0"
+    "dist": "electron-builder --publish=never"
   },
-  "keywords": ["scanner", "documents", "upload", "desktop"],
-  "author": {
-    "name": "RHV DMS Team",
-    "email": "support@rhv-dms.com"
-  },
+  "author": "RHV DMS Team",
   "license": "ISC",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/rhv-dms/scanner-desktop"
-  },
   "devDependencies": {
-    "electron": "^25.0.0",
-    "electron-builder": "^24.0.0"
+    "electron": "^25.9.8",
+    "electron-builder": "^24.13.3"
   },
   "dependencies": {
     "auto-launch": "^5.0.6",
@@ -33,55 +22,31 @@
     "chokidar": "^3.6.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "form-data": "^4.0.0",
     "uuid": "^9.0.0"
   },
   "build": {
-    "appId": "com.document.scanner.desktop",
-    "productName": "Document Scanner Agent",
+    "appId": "com.rhv.scanner",
+    "productName": "RHV Scanner Agent",
     "directories": {
       "output": "dist"
     },
     "files": [
       "**/*",
       "!dist/**/*",
-      "!build/**/*",
-      "!*.md",
-      "!BUILD.md",
-      "!test-install.bat",
-      "!build.bat",
-      "!check-icons.js"
+      "!*.md"
     ],
     "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ],
-      "requestedExecutionLevel": "asInvoker",
-      "sign": false,
-      "verifyUpdateCodeSignature": false,
-      "executableName": "DocumentScannerAgent"
+      "target": {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": false,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Document Scanner Agent",
-      "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico",
-      "deleteAppDataOnUninstall": false,
-      "displayLanguageSelector": false,
-      "language": "1033",
-      "include": "installer.nsh"
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true
     }
   }
 }
