@@ -1,3 +1,5 @@
+console.log('🔧 Loading scanner routes...');
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -9,6 +11,8 @@ const scannerController = require('../controllers/scannerController');
 const auth = require('../middlewares/authMiddleware');
 const { handleScannedUpload } = require('../middlewares/uploadMiddleware');
 const Installer = require('../models/Installer');
+
+console.log('✅ Scanner routes dependencies loaded');
 
 // Multer configuration for installer uploads (store in memory)
 const installerUpload = multer({
@@ -23,7 +27,21 @@ const installerUpload = multer({
   }
 });
 
-// Public download endpoints (no auth required)
+// Public download endpoints (no auth required) - MOVED TO TOP
+router.get('/test-endpoint', (req, res) => {
+  console.log('🔧 Test endpoint called at', new Date().toISOString());
+  res.json({ success: true, message: 'Test endpoint works', timestamp: new Date().toISOString() });
+});
+
+router.get('/auto-install-download', async (req, res) => {
+  console.log('🚀 Auto-install-download endpoint called at', new Date().toISOString());
+  res.json({ success: true, message: 'Endpoint reached', timestamp: new Date().toISOString() });
+});
+
+router.get('/test-scanner', (req, res) => {
+  res.json({ success: true, message: 'Scanner routes working' });
+});
+
 router.get('/installer-info', async (req, res) => {
   try {
     const installer = await Installer.findOne({
@@ -58,49 +76,31 @@ router.get('/installer-info', async (req, res) => {
 });
 
 router.get('/auto-install-download', async (req, res) => {
-  try {
-    // Find the active installer
-    const installer = await Installer.findOne({
-      isActive: true,
-      platform: 'windows'
-    }).sort({ version: -1 });
+  console.log('🚀 Auto-install-download endpoint called');
+  res.json({ success: true, message: 'Endpoint reached' });
+});
 
-    if (installer) {
-      // Return JSON response with download URL for frontend
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
-      res.json({
-        success: true,
-        downloadUrl: `${baseUrl}/api/v1/scanner/auto-install-download/direct`,
-        version: installer.version,
-        size: installer.fileSize,
-        name: installer.name
-      });
-      return;
-    }
-
-    res.status(404).json({
-      success: false,
-      message: 'Installer not available'
-    });
-  } catch (error) {
-    console.error('Error serving installer:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to serve installer'
-    });
-  }
+router.get('/test-endpoint', (req, res) => {
+  console.log('🔧 Test endpoint called');
+  res.json({ success: true, message: 'Test endpoint works' });
 });
 
 // Direct binary download endpoint
 router.get('/auto-install-download/direct', async (req, res) => {
   try {
+    console.log('📥 Direct download request received');
+
     // Find the active installer
     const installer = await Installer.findOne({
       isActive: true,
       platform: 'windows'
     }).sort({ version: -1 });
 
+    console.log('Direct download - Found installer:', installer ? 'YES' : 'NO');
+
     if (installer) {
+      console.log('Direct download - Sending file:', installer.name, 'Size:', installer.fileSize);
+
       // Increment download count
       await Installer.findByIdAndUpdate(installer._id, {
         $inc: { downloadCount: 1 }
@@ -114,52 +114,45 @@ router.get('/auto-install-download/direct', async (req, res) => {
 
       // Send the binary data
       res.send(installer.data);
+      console.log('✅ Direct download completed');
       return;
     }
 
+    console.log('❌ Direct download - No installer found');
     // Installer not available
     res.status(404).json({
       success: false,
       message: 'Installer not available'
     });
   } catch (error) {
-    console.error('Error serving installer:', error);
+    console.error('❌ Error in direct download:', error);
+    console.error('Error details:', error.message);
+    console.error('Stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'Failed to serve installer'
+      message: 'Failed to serve installer',
+      error: error.message
     });
   }
 });
 
-// Protected endpoint for uploading installers
-router.post('/upload-installer', auth, installerUpload.single('installer'), async (req, res) => {
+// TEMPORARY TEST ENDPOINT - NO AUTH AT ALL
+router.post('/upload-installer-test', installerUpload.single('installer'), async (req, res) => {
   try {
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Only administrators can upload installers'
-      });
-    }
+    console.log('UPLOADING INSTALLER - AUTH TEMPORARILY DISABLED');
+    console.log('req.files:', req.files);
+    console.log('req.body:', req.body);
 
-    if (!req.files || !req.files.installer) {
+    if (!req.file) {
       return res.status(400).json({
         success: false,
         message: 'No installer file provided'
       });
     }
 
-    const installerFile = req.files.installer;
+    const installerFile = req.file;
     const version = req.body.version || '1.0.0';
     const platform = req.body.platform || 'windows';
-
-    // Validate file type (should be executable)
-    if (!installerFile.name.endsWith('.exe')) {
-      return res.status(400).json({
-        success: false,
-        message: 'Installer must be a .exe file'
-      });
-    }
 
     // Calculate checksum
     const checksum = crypto.createHash('sha256').update(installerFile.data).digest('hex');
@@ -188,7 +181,7 @@ router.post('/upload-installer', auth, installerUpload.single('installer'), asyn
       mimeType: installerFile.mimetype || 'application/octet-stream',
       data: installerFile.data,
       checksum,
-      uploadedBy: req.user._id
+      uploadedBy: null // No user for test upload
     });
 
     await newInstaller.save();

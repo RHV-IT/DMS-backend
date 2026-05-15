@@ -119,17 +119,24 @@ app.use('/api/v1/dashboard', srcDashboardRoutes);
 console.log("Mounted notifications routes");
 app.use('/api/v1/notifications', srcNotificationRoutes);
 
+// TEMP TEST ROUTE
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' });
+app.post('/api/v1/test-upload', upload.single('installer'), (req, res) => {
+  console.log('TEST UPLOAD - File received:', req.file);
+  res.json({
+    success: true,
+    file: req.file,
+    message: 'Test upload successful'
+  });
+});
+
 console.log("Mounted scanner routes");
 app.use('/api/v1/scanner', srcScannerRoutes);
 
-// Test route for installer upload (no auth)
-app.post('/api/v1/test-upload', (req, res) => {
-  res.json({ success: true, message: 'Test route works' });
-});
-
-// Mount pending scan routes under scanner for /api/v1/scanner/pending
-console.log("Mounted pending scans under scanner routes");
-app.use('/api/v1/scanner', srcPendingScanRoutes);
+// TEMPORARILY DISABLE PENDING SCAN ROUTES
+// console.log("Mounted pending scans under scanner routes");
+// app.use('/api/v1/scanner', srcPendingScanRoutes);
 
 console.log("Mounted agents routes");
 app.use('/api/v1/agents', srcAgentRoutes);
