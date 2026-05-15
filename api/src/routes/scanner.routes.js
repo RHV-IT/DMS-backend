@@ -131,11 +131,16 @@ router.get('/auto-install-download/direct', async (req, res) => {
   }
 });
 
-// Protected endpoint for uploading installers (TEMPORARILY DISABLED AUTH FOR TESTING)
-router.post('/upload-installer', installerUpload.single('installer'), async (req, res) => {
+// Protected endpoint for uploading installers
+router.post('/upload-installer', auth, installerUpload.single('installer'), async (req, res) => {
   try {
-    // TEMPORARILY DISABLED ADMIN CHECK FOR TESTING - REMOVE AFTER TESTING
-    console.log('UPLOADING INSTALLER - AUTH DISABLED FOR TESTING');
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can upload installers'
+      });
+    }
 
     if (!req.files || !req.files.installer) {
       return res.status(400).json({
