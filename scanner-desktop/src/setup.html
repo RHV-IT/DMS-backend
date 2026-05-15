@@ -150,8 +150,6 @@
     </div>
 
     <script>
-        const { ipcRenderer } = require('electron');
-
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('setup-btn').addEventListener('click', startSetup);
             document.getElementById('retry-btn').addEventListener('click', startSetup);
@@ -172,11 +170,11 @@
 
             try {
                 // Start local server if not already running
-                const result = await ipcRenderer.invoke('start-setup-server');
+                const result = await window.electronAPI.startSetupServer();
 
                 if (result.success) {
                     // Open browser to setup page
-                    await ipcRenderer.invoke('open-setup-url', result.setupUrl);
+                    await window.electronAPI.openSetupUrl(result.setupUrl);
 
                     // Poll for completion
                     pollSetupCompletion();
@@ -192,12 +190,12 @@
         function pollSetupCompletion() {
             const checkInterval = setInterval(async () => {
                 try {
-                    const result = await ipcRenderer.invoke('check-setup-complete');
+                    const result = await window.electronAPI.checkSetupComplete();
                     if (result.complete) {
                         clearInterval(checkInterval);
                         showSuccess('Scanner setup complete! The scanner will start automatically.');
                         setTimeout(() => {
-                            ipcRenderer.invoke('close-setup-window');
+                            window.electronAPI.closeSetupWindow();
                         }, 2000);
                     }
                 } catch (error) {

@@ -1,8 +1,9 @@
 {
   "name": "rhv-dms-scanner-desktop",
   "version": "1.0.0",
-  "description": "Document Scanner - Automatically scan and upload documents",
+  "description": "Document Scanner Agent - Automatically scan and upload documents to DMS",
   "main": "main.js",
+  "homepage": "https://rhv-dms.vercel.app",
   "type": "commonjs",
   "scripts": {
     "start": "electron .",
@@ -13,13 +14,21 @@
     "test": "echo \"No tests specified\" && exit 0"
   },
   "keywords": ["scanner", "documents", "upload", "desktop"],
-  "author": "Document Scanner Team",
+  "author": {
+    "name": "RHV DMS Team",
+    "email": "support@rhv-dms.com"
+  },
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rhv-dms/scanner-desktop"
+  },
   "devDependencies": {
     "electron": "^25.0.0",
     "electron-builder": "^24.0.0"
   },
   "dependencies": {
+    "auto-launch": "^5.0.6",
     "axios": "^1.7.7",
     "chokidar": "^3.6.0",
     "cors": "^2.8.5",
@@ -29,7 +38,7 @@
   },
   "build": {
     "appId": "com.document.scanner.desktop",
-    "productName": "Document Scanner",
+    "productName": "Document Scanner Agent",
     "directories": {
       "output": "dist"
     },
@@ -46,21 +55,33 @@
     "win": {
       "target": [
         {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
           "target": "portable",
           "arch": ["x64"]
         }
       ],
       "requestedExecutionLevel": "asInvoker",
       "sign": false,
-      "verifyUpdateCodeSignature": false
+      "verifyUpdateCodeSignature": false,
+      "executableName": "DocumentScannerAgent"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
-      "createDesktopShortcut": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "Document Scanner"
+      "shortcutName": "Document Scanner Agent",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false,
+      "language": "1033",
+      "include": "installer.nsh"
     }
   }
 }

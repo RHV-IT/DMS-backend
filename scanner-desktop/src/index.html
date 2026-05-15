@@ -332,8 +332,6 @@
     </div>
 
     <script>
-        const { ipcRenderer } = require('electron');
-
         // Load status on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadStatus();
@@ -343,7 +341,7 @@
         // Load system status
         async function loadStatus() {
             try {
-                const status = await ipcRenderer.invoke('get-status');
+                const status = await window.electronAPI.getStatus();
                 displayStatus(status);
             } catch (error) {
                 console.error('Failed to load status:', error);
@@ -354,7 +352,7 @@
         // Load configuration
         async function loadConfig() {
             try {
-                const result = await ipcRenderer.invoke('get-config');
+                const result = await window.electronAPI.getConfig();
                 if (result.success) {
                     displayConfig(result.config);
                 } else {
@@ -409,7 +407,7 @@
 
         // Open scan folder
         function openScanFolder() {
-            ipcRenderer.invoke('open-scan-folder');
+            window.electronAPI.openScanFolder();
         }
 
         // Refresh status
@@ -421,14 +419,25 @@
         }
 
         // Change scan folder
-        function changeScanFolder() {
-            ipcRenderer.invoke('change-scan-folder');
+        async function changeScanFolder() {
+            try {
+                const result = await window.electronAPI.changeScanFolder();
+                if (result.success) {
+                    // Reload status to show new folder
+                    loadStatus();
+                    addLogEntry('Scan folder changed successfully', 'success');
+                } else {
+                    addLogEntry('Failed to change scan folder: ' + result.error, 'error');
+                }
+            } catch (error) {
+                addLogEntry('Error changing scan folder: ' + error.message, 'error');
+            }
         }
 
         // Test connection
         async function testConnection() {
             try {
-                const result = await ipcRenderer.invoke('test-connection');
+                const result = await window.electronAPI.testConnection();
                 if (result.success) {
                     addLogEntry('Connection test successful', 'success');
                 } else {
@@ -450,7 +459,7 @@
         }
 
         // Listen for log messages from main process
-        ipcRenderer.on('log-message', (event, message, type) => {
+        window.electronAPI.onLogMessage((message, type) => {
             addLogEntry(message, type);
         });
     </script>

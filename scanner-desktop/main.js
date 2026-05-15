@@ -9,6 +9,14 @@ const axios = require('axios');
 const FormData = require('form-data');
 const chokidar = require('chokidar');
 const { v4: uuidv4 } = require('uuid');
+const AutoLaunch = require('auto-launch');
+
+// Disable console output in production
+if (app.isPackaged) {
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+}
 
 // Global variables
 let tray = null;
@@ -22,6 +30,7 @@ let cancelledUploads = new Set();
 let machineId = null;
 let API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
 let connectionStatus = 'disconnected'; // 'connected', 'disconnected', 'watching', 'uploading'
+let scannerPaused = false;
 
 // Initialize directories and config
 function initializeApp() {
@@ -39,6 +48,16 @@ function initializeApp() {
 
   // Load cancelled scans
   cancelledUploads = loadCancelledScans();
+
+  // Initialize auto-launch
+  autoLauncher = new AutoLaunch({
+    name: 'Document Scanner Agent',
+    path: process.execPath,
+    isHidden: true
+  });
+
+  // Enable auto-launch
+  autoLauncher.enable();
 
   console.log('RHV DMS Scanner initialized');
   console.log('Scan directory:', SCAN_DIR);
@@ -595,6 +614,12 @@ function initializeWatcher() {
   watcher.on('add', (filePath) => {
     const fileName = path.basename(filePath);
 
+    // Check if scanner is paused
+    if (scannerPaused) {
+      console.log(`Scanner paused, ignoring file: ${fileName}`);
+      return;
+    }
+
     try {
       const stats = fs.statSync(filePath);
 
@@ -631,10 +656,25 @@ function initializeWatcher() {
 
   watcher.on('ready', () => {
     console.log('File watcher is ready');
-    connectionStatus = 'watching';
+    connectionStatus = scannerPaused ? 'paused' : 'watching';
     updateTrayMenu();
     startHeartbeat();
   });
+}
+
+// Toggle scanner pause/resume
+function toggleScannerPause() {
+  scannerPaused = !scannerPaused;
+
+  if (scannerPaused) {
+    console.log('Scanner paused by user');
+    connectionStatus = 'paused';
+  } else {
+    console.log('Scanner resumed by user');
+    connectionStatus = 'watching';
+  }
+
+  updateTrayMenu();
 }
 
 // Create system tray
@@ -669,26 +709,26 @@ function updateTrayMenu() {
   const statusText = getStatusText();
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: `Document Scanner - ${statusText}`,
+      label: `Document Scanner Agent - ${statusText}`,
       enabled: false
     },
     { type: 'separator' },
     {
-      label: 'Open Scan Folder',
-      click: () => {
-        require('child_process').exec(`explorer "${SCAN_DIR}"`);
-      }
-    },
-    {
-      label: 'Open Settings',
+      label: 'Open Dashboard',
       click: () => {
         createMainWindow();
       }
     },
     {
-      label: 'Restart Scanner',
+      label: scannerPaused ? 'Resume Scanner' : 'Pause Scanner',
       click: () => {
-        restartApp();
+        toggleScannerPause();
+      }
+    },
+    {
+      label: 'Open Scan Folder',
+      click: () => {
+        require('child_process').exec(`explorer "${SCAN_DIR}"`);
       }
     },
     { type: 'separator' },
@@ -700,7 +740,7 @@ function updateTrayMenu() {
     }
   ]);
 
-  tray.setToolTip(`Document Scanner - ${statusText}`);
+  tray.setToolTip(`Document Scanner Agent - ${statusText}`);
   tray.setContextMenu(contextMenu);
 }
 
@@ -715,6 +755,8 @@ function getStatusText() {
       return 'Monitoring Documents';
     case 'uploading':
       return 'Processing Document';
+    case 'paused':
+      return 'Paused';
     default:
       return 'Starting...';
   }
@@ -732,12 +774,14 @@ function createSetupWindow() {
     height: 600,
     show: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      devTools: false  // Disable dev tools for production
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js'),
+      devTools: !app.isPackaged  // Disable dev tools for production
     },
     resizable: false,
-    title: 'Document Scanner Setup',
+    title: 'Document Scanner Agent Setup',
     icon: path.join(__dirname, 'assets', 'icon.png')
   });
 
@@ -764,12 +808,14 @@ function createMainWindow() {
     height: 600,
     show: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      devTools: false  // Disable dev tools for production
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js'),
+      devTools: !app.isPackaged  // Disable dev tools for production
     },
     icon: path.join(__dirname, 'assets', 'icon.png'),
-    title: 'Document Scanner Settings'
+    title: 'Document Scanner Agent Settings'
   });
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
