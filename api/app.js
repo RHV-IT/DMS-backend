@@ -24,8 +24,8 @@ const srcPermissionRoutes = require("./src/routes/permission.routes");
 const srcSettingsRoutes = require("./src/routes/settings.routes");
 const srcPendingScanRoutes = require("./src/routes/pendingScan.routes");
 const srcConfigRoutes = require("./src/routes/config.routes");
-//database connection
-const db = require("./database/documentRepository.db");
+//database connection - using Mongoose for consistency with models
+const connectDB = require("./src/config/database");
 
 // DEBUGGING: Verify routes are loaded
 console.log("Auth routes loaded:", typeof srcAuthRoutes);
@@ -85,7 +85,7 @@ app.use(async (req, res, next) => {
   }
 
   try {
-    await db.ensureConnected();
+    await connectDB();
     next();
   } catch (error) {
     console.error("Database connection failed:", error);
