@@ -73,6 +73,4 @@ const startServer = async (retryCount = 0) => {
   }
 };
 
-startServer();
-
 module.exports = app;

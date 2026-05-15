@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-const UPLOAD_PATH = process.env.UPLOAD_PATH || path.join(os.tmpdir(), 'uploads');
+const UPLOAD_PATH = process.env.UPLOAD_PATH || (process.env.VERCEL ? '/tmp' : path.join(os.tmpdir(), 'uploads'));
 
 // Confidentiality level hierarchy (higher index = higher level)
 const CONFIDENTIALITY_LEVELS = ['public', 'internal', 'confidential', 'highly_confidential'];

@@ -12,6 +12,10 @@ console.log('Using upload temp directory:', uploadDir);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    // Ensure upload directory exists
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
