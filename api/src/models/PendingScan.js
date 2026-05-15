@@ -26,7 +26,7 @@ const pendingScanSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'uploaded', 'failed'],
+    enum: ['pending', 'confirmed', 'cancelled', 'uploaded', 'failed'],
     default: 'pending'
   },
   createdAt: {

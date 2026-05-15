@@ -9,11 +9,11 @@ const { handleScannedUpload } = require('../middlewares/uploadMiddleware');
 
 // Public download endpoints (no auth required)
 router.get('/auto-install-download', (req, res) => {
-  // First try to serve the full Electron installer
-  const installerPath = path.join(__dirname, '../../../scanner-agent/dist/RHV-DMS-Scanner-Setup-1.0.0.exe');
+  // Serve the Document Scanner installer
+  const installerPath = path.join(__dirname, '../../../scanner-desktop/dist/Document-Scanner-Setup-1.0.0.exe');
 
   if (fs.existsSync(installerPath)) {
-    res.setHeader('Content-Disposition', 'attachment; filename="RHV-DMS-Scanner-Setup.exe"');
+    res.setHeader('Content-Disposition', 'attachment; filename="Document-Scanner-Setup.exe"');
     res.setHeader('Content-Type', 'application/octet-stream');
 
     const fileStream = fs.createReadStream(installerPath);
@@ -28,27 +28,10 @@ router.get('/auto-install-download', (req, res) => {
     return;
   }
 
-  // Fallback: serve the simple installer script
-  const simpleInstallerPath = path.join(__dirname, '../../../scanner-agent/simple-installer.bat');
-
-  if (!fs.existsSync(simpleInstallerPath)) {
-    return res.status(404).json({
-      success: false,
-      message: 'Installer not available. Please contact administrator.'
-    });
-  }
-
-  res.setHeader('Content-Disposition', 'attachment; filename="RHV-DMS-Scanner-Setup.bat"');
-  res.setHeader('Content-Type', 'application/octet-stream');
-
-  const fileStream = fs.createReadStream(simpleInstallerPath);
-  fileStream.pipe(res);
-
-  fileStream.on('error', (err) => {
-    console.error('Error streaming simple installer:', err);
-    if (!res.headersSent) {
-      res.status(500).json({ success: false, message: 'Failed to download installer' });
-    }
+  // If installer not built yet, return helpful message
+  res.status(404).json({
+    success: false,
+    message: 'Document Scanner installer is being prepared. Please check back in a few minutes or contact your administrator.'
   });
 });
 
@@ -106,6 +89,11 @@ router.get('/start-agent-download', (req, res) => {
 
 // Protected endpoints (require authentication)
 router.use(auth);
+
+// Agent health and heartbeat endpoints
+router.get('/health', scannerController.getAgentHealth);
+router.post('/heartbeat', scannerController.heartbeat);
+router.post('/notify', scannerController.notifyNewFile);
 
 router.post('/upload', handleScannedUpload, scannerController.uploadScannerFile);
 router.post('/upload-simple', handleScannedUpload, scannerController.uploadScannerFileSimple);

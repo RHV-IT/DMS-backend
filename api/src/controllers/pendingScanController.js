@@ -120,11 +120,11 @@ const scannerController = {
         department: department || user?.department || 'unknown'
       });
 
-      // Check for duplicates: same machineId and fileFingerprint with rejected or uploaded status
+      // Check for duplicates: same machineId and fileFingerprint with cancelled or uploaded status
       const existingScan = await PendingScan.findOne({
         machineId: finalMachineId,
         fileFingerprint,
-        status: { $in: ['rejected', 'uploaded'] }
+        status: { $in: ['cancelled', 'uploaded'] }
       });
 
       if (existingScan) {
@@ -141,7 +141,7 @@ const scannerController = {
           data: {
             existingId: existingScan.id,
             status: existingScan.status,
-            processedAt: existingScan.status === 'rejected' ? existingScan.rejectedAt : existingScan.confirmedAt
+            processedAt: existingScan.status === 'cancelled' ? existingScan.rejectedAt : existingScan.confirmedAt
           }
         });
       }
@@ -636,12 +636,14 @@ const scannerController = {
 
       res.status(201).json({
         success: true,
-        data: file,
-        fileUrl,
-        fileId: file.fileId,
-        deleteLocal: true, // Agent should delete local scanned file
-        originalFilePath: pendingScan.filePath,
-        message: `File confirmed and converted to ${finalFormat.toUpperCase()} successfully`
+        message: `File confirmed and converted to ${finalFormat.toUpperCase()} successfully`,
+        data: {
+          file: file,
+          fileUrl,
+          fileId: file.fileId,
+          deleteFile: true, // Agent should delete local scanned file
+          originalFilePath: pendingScan.filePath
+        }
       });
     } catch (error) {
       next(error);
@@ -724,7 +726,7 @@ const scannerController = {
         ...deviceInfo,
         userId: user._id,
         userEmail: user.email,
-        action: 'delete',
+        action: 'cancel',
         resource: 'pending_scan',
         resourceId: pendingScan.id,
         details: {
@@ -739,7 +741,10 @@ const scannerController = {
 
       res.json({
         success: true,
-        message: 'Pending scan cancelled successfully'
+        message: 'Pending scan cancelled successfully',
+        data: {
+          keepFile: true // Agent should leave file untouched
+        }
       });
     } catch (error) {
       next(error);
@@ -797,12 +802,12 @@ const scannerController = {
         });
       }
 
-      // Update status to rejected (DO NOT delete file - keeps it in scan folder)
+      // Update status to cancelled (DO NOT delete file - keeps it in scan folder)
       await PendingScan.findByIdAndUpdate(pendingScan._id, {
-        status: 'rejected',
+        status: 'cancelled',
         rejectedBy: user._id,
         rejectedAt: new Date(),
-        rejectionReason: reason || 'Rejected by user'
+        rejectionReason: reason || 'Cancelled by user'
       });
 
       // Audit log
@@ -814,8 +819,8 @@ const scannerController = {
         resourceId: id,
         details: {
           fileName: pendingScan.originalName,
-          action: 'rejected',
-          reason: reason || 'User rejected',
+          action: 'cancelled',
+          reason: reason || 'User cancelled',
           machineId: pendingScan.machineId,
           fileFingerprint: pendingScan.fileFingerprint
         },

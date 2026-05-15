@@ -1,0 +1,62 @@
+{
+  "name": "rhv-dms-scanner-desktop",
+  "version": "1.0.0",
+  "description": "Document Scanner - Automatically scan and upload documents",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "dist": "electron-builder --publish=never",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": ["scanner", "documents", "upload", "desktop"],
+  "author": "Document Scanner Team",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^25.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "chokidar": "^3.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "form-data": "^4.0.0",
+    "uuid": "^9.0.0"
+  },
+  "build": {
+    "appId": "com.document.scanner.desktop",
+    "productName": "Document Scanner",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**/*",
+      "!build/**/*",
+      "!*.md",
+      "!BUILD.md",
+      "!test-install.bat",
+      "!build.bat",
+      "!check-icons.js"
+    ],
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Document Scanner",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
+    }
+  }
+}

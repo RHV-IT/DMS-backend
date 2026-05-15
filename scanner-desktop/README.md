@@ -1,125 +1,60 @@
-# RHV DMS Scanner Desktop Application
+# Document Scanner Desktop
 
-This is the desktop version of the RHV DMS Scanner Agent, built with Electron for Windows deployment.
+A beginner-friendly document scanner application that automatically monitors a folder and uploads scanned documents.
 
 ## Features
 
-- **Standalone Installation**: No Node.js or npm required
-- **System Tray**: Runs in background with system tray icon
-- **Auto-start**: Launches automatically with Windows
-- **Local API Server**: Provides health endpoint on port 4001
-- **File Monitoring**: Watches Documents/Scan folder automatically
-- **Machine Registration**: Auto-registers with backend
-- **Professional UI**: Settings window accessible from system tray
+- **Silent Operation**: No terminal windows or command prompts
+- **Automatic Monitoring**: Watches document folder for new files
+- **GUI Installer**: Standard Windows installer with Next/Next/Finish
+- **System Tray**: Runs in background with status indicators
+- **Auto-Start**: Launches automatically with Windows
+- **Settings GUI**: Easy configuration through graphical interface
 
-## Installation
+## Building the Installer
 
-The application will be packaged as `RHV-DMS-Scanner-Setup.exe` using electron-builder with NSIS.
+### Prerequisites
 
-### For End Users:
-1. Download `RHV-DMS-Scanner-Setup.exe`
-2. Run the installer
-3. Application starts automatically
-4. Access settings via system tray icon
+- Node.js 18+
+- npm
 
-### For Developers:
-```bash
-cd scanner-desktop
-npm install
-npm run dev    # Development
-npm run build  # Build installer
-```
-
-## Configuration
-
-- **API URL**: Automatically set to `https://rhv-dms-backend.vercel.app`
-- **Scan Folder**: `Documents/Scan`
-- **Config Folder**: `Documents/RHV-DMS-Scanner`
-- **Local API**: `http://localhost:4001`
-
-## API Endpoints
-
-### Health Check
-```
-GET http://localhost:4001/health
-```
-
-Response:
-```json
-{
-  "installed": true,
-  "running": true,
-  "version": "1.0.0",
-  "machineId": "machine-xxxx",
-  "scanDirectory": "C:\\Users\\user\\Documents\\Scan",
-  "pendingUploads": 0,
-  "timestamp": "2024-01-01T12:00:00.000Z"
-}
-```
-
-### Set Token (Configuration)
-```
-POST http://localhost:4001/set-token
-Content-Type: application/json
-
-{
-  "token": "jwt-token",
-  "userId": "user-id",
-  "userEmail": "user@domain.com",
-  "userName": "User Name"
-}
-```
-
-### Get Config
-```
-GET http://localhost:4001/config
-```
-
-## Architecture
-
-- **Main Process**: `main.js` - System tray, file watching, API server
-- **Renderer Process**: `src/index.html` - Settings UI
-- **Auto-updater**: Built-in update mechanism
-- **Single Instance**: Prevents multiple instances
-
-## Build Process
+### Build Steps
 
 ```bash
 # Install dependencies
 npm install
 
-# Development
-npm run dev
-
 # Build Windows installer
-npm run build
-
-# Output: dist/RHV-DMS-Scanner-Setup.exe
+npm run build:win
 ```
 
-## File Structure
+### Output
 
+The installer will be created at:
 ```
-scanner-desktop/
-├── main.js              # Main Electron process
-├── src/
-│   └── index.html       # Settings UI
-├── assets/
-│   └── icon.ico         # Application icon
-├── package.json         # Dependencies and build config
-└── README.md           # This file
+scanner-desktop/dist/Document-Scanner-Setup-1.0.0.exe
 ```
 
-## Security
+## Installation Experience
 
-- JWT tokens stored securely in user config
-- Machine ID generated uniquely per installation
-- No sensitive data logged
-- HTTPS communication with backend
+1. **Download**: `Document-Scanner-Setup.exe`
+2. **Install**: Standard Windows wizard (Next/Next/Finish)
+3. **Setup**: App opens login/setup window
+4. **Login**: User signs in via web browser
+5. **Ready**: App runs silently in system tray
 
-## Troubleshooting
+## User Experience
 
-1. **Application won't start**: Check Windows Event Viewer
-2. **Files not uploading**: Verify token configuration
-3. **API not responding**: Check port 4001 availability
-4. **Scan folder not monitored**: Ensure Documents/Scan exists
+- **First Run**: Setup window guides user through login
+- **Normal Use**: App runs in tray, monitors documents folder
+- **Settings**: Right-click tray icon → Open Settings
+- **Status**: Tray icon shows connection and activity status
+
+## Technical Details
+
+- Built with Electron
+- Uses NSIS for Windows installer
+- Auto-starts with Windows login
+- Monitors folder with chokidar
+- Secure token storage
+- Automatic reconnection

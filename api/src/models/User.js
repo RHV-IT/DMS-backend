@@ -57,6 +57,23 @@ const userSchema = new mongoose.Schema({
     default: 0
   },
   refreshToken: String,
+  // Agent health tracking
+  lastAgentHeartbeat: {
+    type: Date,
+    default: null
+  },
+  machineName: {
+    type: String,
+    default: null
+  },
+  agentVersion: {
+    type: String,
+    default: null
+  },
+  agentConnected: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now

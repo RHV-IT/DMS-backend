@@ -219,6 +219,11 @@ const authController = {
       // Set the new token cookie
       res.cookie("token", accessToken, cookieConfig);
 
+      const isFirstLogin = user.loginCount === 1;
+      const agentRequired = true; // Scanner agent is always required for this system
+      const agentConnected = user.agentConnected || false;
+      const mustDownloadAgent = !agentConnected; // If not connected, must download
+
       res.json({
         success: true,
         data: {
@@ -235,6 +240,11 @@ const authController = {
           refreshToken,
           rememberMe,
         },
+        loginCount: user.loginCount,
+        isFirstLogin,
+        agentRequired,
+        agentConnected,
+        mustDownloadAgent,
       });
     } catch (error) {
       logger.error(`[AUTH:LOGIN:${requestId}] Error: ${error.message}`, { stack: error.stack });

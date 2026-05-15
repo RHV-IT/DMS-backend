@@ -10,23 +10,18 @@ const FormData = require('form-data');
 const chokidar = require('chokidar');
 const { v4: uuidv4 } = require('uuid');
 
-// Configuration
-const API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
-const SCAN_DIR = path.join(os.homedir(), 'Documents', 'Scan');
-const CONFIG_DIR = path.join(os.homedir(), 'Documents', 'RHV-DMS-Scanner');
-const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
-const CANCELLED_SCANS_PATH = path.join(CONFIG_DIR, 'cancelled-scans.json');
-const LOCAL_PORT = 4001;
-
 // Global variables
 let tray = null;
 let mainWindow = null;
+let setupWindow = null;
 let server = null;
 let watcher = null;
 let statusCheckInterval = null;
 let pendingUploads = new Map();
 let cancelledUploads = new Set();
 let machineId = null;
+let API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
+let connectionStatus = 'disconnected'; // 'connected', 'disconnected', 'watching', 'uploading'
 
 // Initialize directories and config
 function initializeApp() {
@@ -38,8 +33,9 @@ function initializeApp() {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
   }
 
-  // Generate or load machine ID
+  // Generate or load machine ID and config
   machineId = loadOrGenerateMachineId();
+  loadApiConfig();
 
   // Load cancelled scans
   cancelledUploads = loadCancelledScans();
@@ -48,6 +44,70 @@ function initializeApp() {
   console.log('Scan directory:', SCAN_DIR);
   console.log('Config directory:', CONFIG_DIR);
   console.log('Machine ID:', machineId);
+  console.log('API URL:', API_BASE_URL);
+}
+
+// Load API configuration from config file
+function loadApiConfig() {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      if (config.apiUrl) {
+        // Extract base URL from apiUrl (remove path part)
+        const url = new URL(config.apiUrl);
+        API_BASE_URL = `${url.protocol}//${url.host}`;
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('Error loading API config:', err.message);
+  }
+
+  // Fallback to default
+  API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
+}
+
+// Check if the app is configured (has token)
+async function checkIfConfigured() {
+  try {
+    if (!fs.existsSync(CONFIG_PATH)) {
+      return false;
+    }
+
+    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    return !!(config.token && config.userId);
+  } catch (error) {
+    console.warn('Error checking configuration:', error.message);
+    return false;
+  }
+}
+
+// Start the main application (tray, watcher, etc.)
+function startMainApp() {
+  createTray();
+  initializeWatcher();
+
+  // Register machine after a short delay
+  setTimeout(registerMachine, 5000);
+
+  console.log('Document Scanner started');
+}
+
+// Restart the application
+function restartApp() {
+  // Stop current services
+  if (watcher) watcher.close();
+  if (statusCheckInterval) clearInterval(statusCheckInterval);
+  if (server) stopLocalServer();
+
+  // Reset state
+  pendingUploads.clear();
+  connectionStatus = 'disconnected';
+
+  // Restart after a short delay
+  setTimeout(() => {
+    startMainApp();
+  }, 1000);
 }
 
 // Generate or load machine ID
@@ -172,6 +232,102 @@ function startLocalServer() {
     });
   });
 
+  // Setup page endpoint
+  expressApp.get('/setup', (req, res) => {
+    const setupHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Scanner Setup</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .logo { font-size: 4em; margin-bottom: 20px; }
+        .title { font-size: 2em; color: #667eea; margin-bottom: 20px; }
+        .instructions {
+            font-size: 1.1em;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            color: #666;
+        }
+        .btn {
+            background: #667eea;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1.1em;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 10px;
+        }
+        .btn:hover { background: #5a6fd8; }
+        .status {
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+            display: none;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📄</div>
+        <h1 class="title">Connect Your Document Scanner</h1>
+
+        <div class="instructions">
+            <p>Welcome to Document Scanner setup!</p>
+            <p>To get started, please sign in to your account in the web interface.</p>
+            <p>The scanner will automatically connect once you're logged in.</p>
+        </div>
+
+        <a href="${API_BASE_URL.replace('https://', 'http://localhost:3000/').replace('api', '')}" class="btn" target="_blank">
+            Open Sign In Page
+        </a>
+
+        <div id="status" class="status"></div>
+
+        <script>
+            // Poll for configuration completion
+            setInterval(async () => {
+                try {
+                    const response = await fetch('/config');
+                    const data = await response.json();
+                    if (data.success && data.config.hasToken) {
+                        document.getElementById('status').className = 'status success';
+                        document.getElementById('status').style.display = 'block';
+                        document.getElementById('status').textContent = '✓ Scanner connected successfully! You can close this window.';
+                        setTimeout(() => window.close(), 3000);
+                    }
+                } catch (e) {
+                    console.log('Waiting for configuration...');
+                }
+            }, 2000);
+        </script>
+    </div>
+</body>
+</html>`;
+    res.send(setupHtml);
+  });
+
   // Set token endpoint (for configuration)
   expressApp.post('/set-token', (req, res) => {
     try {
@@ -280,64 +436,81 @@ async function registerMachine() {
   }
 }
 
-// Send file to pending
-async function sendToPending(filePath) {
+// Send file metadata notification to backend
+async function sendFileNotification(filePath) {
   try {
+    connectionStatus = 'uploading';
+    updateTrayMenu();
+
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 
     if (!config.token) {
-      console.log('No token configured, skipping upload');
-      return false;
+      console.log('No token configured, skipping notification');
+      connectionStatus = 'disconnected';
+      updateTrayMenu();
+      return null;
     }
 
     const fileName = path.basename(filePath);
-    const fileBuffer = fs.readFileSync(filePath);
+    const stats = fs.statSync(filePath);
+    const checksum = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 
-    const formData = new FormData();
-    formData.append('file', fileBuffer, {
-      filename: fileName,
-      contentType: getMimeType(fileName)
-    });
+    console.log(`Notifying backend of new file: ${fileName}`);
 
-    console.log(`Uploading: ${fileName}`);
-
-    const response = await axios.post(`${API_BASE_URL}/api/v1/scanner/pending`, formData, {
+    const response = await axios.post(`${API_BASE_URL}/api/v1/scanner/notify`, {
+      fileName,
+      checksum,
+      machineName: os.hostname(),
+      machineId
+    }, {
       headers: {
-        ...formData.getHeaders(),
         'Authorization': `Bearer ${config.token}`,
-        'x-machine-id': machineId,
-        'x-machine-name': os.hostname(),
-        'x-hostname': os.hostname(),
-        'x-platform': os.platform(),
-        'x-source': 'desktop-scanner'
+        'Content-Type': 'application/json'
       },
-      timeout: 60000,
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity
+      timeout: 10000
     });
 
     if (response.data && response.data.success) {
-      console.log(`✓ Pending upload: ${fileName}`);
+      console.log(`✓ Notification sent: ${fileName}`);
+      connectionStatus = 'connected';
+      updateTrayMenu();
 
-      // Add to pending uploads tracking
-      const pendingId = response.data?.data?.id;
-      if (pendingId) {
-        pendingUploads.set(pendingId, {
+      const decision = response.data.keepFile ? 'keep' : 'delete';
+
+      if (decision === 'delete') {
+        console.log(`✓ Backend requested deletion: ${fileName}`);
+        // Delete the local file
+        fs.unlinkSync(filePath);
+        console.log(`Deleted local file: ${fileName}`);
+        return 'deleted';
+      } else {
+        console.log(`✓ Backend requested to keep: ${fileName}`);
+        // Keep the file locally, add to tracking for potential manual upload
+        const trackingId = `${machineId}_${checksum}`;
+        pendingUploads.set(trackingId, {
           filePath,
           fileName,
-          uploadedAt: new Date().toISOString(),
-          machineId: machineId
+          checksum,
+          notifiedAt: new Date().toISOString(),
+          machineId: machineId,
+          decision: 'keep'
         });
+        return 'kept';
       }
-
-      return true;
     } else {
-      console.error(`✗ Failed: ${fileName}`);
-      return false;
+      console.error(`✗ Notification failed: ${fileName}`);
+      connectionStatus = 'disconnected';
+      updateTrayMenu();
+      return null;
     }
   } catch (error) {
-    console.error(`✗ Error: ${path.basename(filePath)} - ${error.message}`);
-    return false;
+    console.error(`✗ Error notifying backend: ${path.basename(filePath)} - ${error.message}`);
+    connectionStatus = 'disconnected';
+    updateTrayMenu();
+
+    // For file notifications, don't retry automatically as the file might be processed elsewhere
+    // Just log and continue
+    return null;
   }
 }
 
@@ -361,67 +534,50 @@ function getFileHash(filePath, stats) {
   return path.basename(filePath) + ':' + stats.size + ':' + stats.mtime.getTime();
 }
 
-// Start status checker
-function startStatusChecker() {
+// Start heartbeat sender
+function startHeartbeat() {
   if (statusCheckInterval) clearInterval(statusCheckInterval);
-  statusCheckInterval = setInterval(checkPendingStatus, 30000); // Check every 30 seconds
-  console.log('Started pending status checker (30s interval)');
+  statusCheckInterval = setInterval(sendHeartbeat, 30000); // Send heartbeat every 30 seconds
+  console.log('Started heartbeat sender (30s interval)');
 }
 
-// Check pending status
-async function checkPendingStatus() {
+// Send heartbeat to backend with retry
+async function sendHeartbeat(retryCount = 0) {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 
-    if (!config.token || pendingUploads.size === 0) return;
-
-    const pendingIds = Array.from(pendingUploads.keys());
-    console.log(`Checking status of ${pendingIds.length} pending uploads`);
-
-    for (const pendingId of pendingIds) {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/api/v1/scanner/pending/${pendingId}`, {
-          headers: { Authorization: 'Bearer ' + config.token },
-          timeout: 10000
-        });
-
-        if (response.data?.success && response.data?.data) {
-          const pendingScan = response.data.data;
-          const pendingData = pendingUploads.get(pendingId);
-
-          if (pendingScan.status === 'confirmed') {
-            console.log(`✓ Confirmed: ${pendingData.fileName} - deleting local file`);
-            // Delete the local file
-            if (fs.existsSync(pendingData.filePath)) {
-              fs.unlinkSync(pendingData.filePath);
-              console.log(`Deleted local file: ${pendingData.fileName}`);
-            }
-            // Remove from pending
-            pendingUploads.delete(pendingId);
-
-          } else if (pendingScan.status === 'cancelled') {
-            console.log(`✗ Cancelled: ${pendingData.fileName} - keeping local file`);
-            // Add to cancelled uploads to ignore permanently
-            const fileHash = getFileHash(pendingData.filePath, fs.statSync(pendingData.filePath));
-            cancelledUploads.add(fileHash);
-            saveCancelledScans(cancelledUploads);
-            // Remove from pending
-            pendingUploads.delete(pendingId);
-          }
-          // If still pending, keep waiting
-        }
-      } catch (err) {
-        // If 404, pending scan might be deleted - remove from tracking
-        if (err.response?.status === 404) {
-          console.log(`Pending scan ${pendingId} not found - removing from tracking`);
-          pendingUploads.delete(pendingId);
-        } else {
-          console.warn(`Status check error for ${pendingId}:`, err.message);
-        }
-      }
+    if (!config.token) {
+      connectionStatus = 'disconnected';
+      updateTrayMenu();
+      return;
     }
-  } catch (err) {
-    console.error('Status check failed:', err.message);
+
+    await axios.post(`${API_BASE_URL}/api/v1/scanner/heartbeat`, {
+      machineId,
+      machineName: os.hostname(),
+      agentVersion: app.getVersion()
+    }, {
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 5000
+    });
+
+    console.log('Heartbeat sent');
+    connectionStatus = 'connected';
+    updateTrayMenu();
+  } catch (error) {
+    console.warn('Heartbeat failed:', error.message);
+    connectionStatus = 'disconnected';
+    updateTrayMenu();
+
+    // Retry up to 3 times with exponential backoff
+    if (retryCount < 3) {
+      const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+      console.log(`Retrying heartbeat in ${delay}ms...`);
+      setTimeout(() => sendHeartbeat(retryCount + 1), delay);
+    }
   }
 }
 
@@ -460,13 +616,11 @@ function initializeWatcher() {
 
       console.log(`File detected: ${fileName}`);
 
-      // Upload after delay
+      // Notify backend after delay
       setTimeout(async () => {
         if (fs.existsSync(filePath)) {
-          const success = await sendToPending(filePath);
-          if (success) {
-            // File uploaded successfully, keep for confirmation
-          }
+          const result = await sendFileNotification(filePath);
+          // File is either kept locally or deleted based on backend decision
         }
       }, 2000);
 
@@ -477,7 +631,9 @@ function initializeWatcher() {
 
   watcher.on('ready', () => {
     console.log('File watcher is ready');
-    startStatusChecker();
+    connectionStatus = 'watching';
+    updateTrayMenu();
+    startHeartbeat();
   });
 }
 
@@ -498,9 +654,22 @@ function createTray() {
 
   tray = new Tray(icon || path.join(__dirname, 'assets', 'default-icon.png'));
 
+  updateTrayMenu();
+
+  tray.on('click', () => {
+    // Show main window on tray click
+    createMainWindow();
+  });
+}
+
+// Update tray menu based on current status
+function updateTrayMenu() {
+  if (!tray) return;
+
+  const statusText = getStatusText();
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'RHV DMS Scanner',
+      label: `Document Scanner - ${statusText}`,
       enabled: false
     },
     { type: 'separator' },
@@ -511,16 +680,15 @@ function createTray() {
       }
     },
     {
-      label: 'View Logs',
+      label: 'Open Settings',
       click: () => {
-        // Show main window with logs
         createMainWindow();
       }
     },
     {
-      label: 'Settings',
+      label: 'Restart Scanner',
       click: () => {
-        createMainWindow();
+        restartApp();
       }
     },
     { type: 'separator' },
@@ -532,12 +700,55 @@ function createTray() {
     }
   ]);
 
-  tray.setToolTip('RHV DMS Scanner - Running');
+  tray.setToolTip(`Document Scanner - ${statusText}`);
   tray.setContextMenu(contextMenu);
+}
 
-  tray.on('click', () => {
-    // Show main window on tray click
-    createMainWindow();
+// Get status text for display
+function getStatusText() {
+  switch (connectionStatus) {
+    case 'connected':
+      return 'Ready';
+    case 'disconnected':
+      return 'Connecting...';
+    case 'watching':
+      return 'Monitoring Documents';
+    case 'uploading':
+      return 'Processing Document';
+    default:
+      return 'Starting...';
+  }
+}
+
+// Create setup window (for first-time configuration)
+function createSetupWindow() {
+  if (setupWindow) {
+    setupWindow.show();
+    return;
+  }
+
+  setupWindow = new BrowserWindow({
+    width: 500,
+    height: 600,
+    show: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      devTools: false  // Disable dev tools for production
+    },
+    resizable: false,
+    title: 'Document Scanner Setup',
+    icon: path.join(__dirname, 'assets', 'icon.png')
+  });
+
+  setupWindow.loadFile(path.join(__dirname, 'src', 'setup.html'));
+
+  setupWindow.once('ready-to-show', () => {
+    setupWindow.show();
+  });
+
+  setupWindow.on('closed', () => {
+    setupWindow = null;
   });
 }
 
@@ -554,10 +765,11 @@ function createMainWindow() {
     show: false,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      devTools: false  // Disable dev tools for production
     },
     icon: path.join(__dirname, 'assets', 'icon.png'),
-    title: 'RHV DMS Scanner'
+    title: 'Document Scanner Settings'
   });
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
@@ -588,7 +800,8 @@ ipcMain.handle('get-status', () => {
     scanDirectory: SCAN_DIR,
     pendingUploads: pendingUploads.size,
     version: app.getVersion(),
-    apiUrl: API_BASE_URL
+    apiUrl: API_BASE_URL,
+    connectionStatus: getStatusText()
   };
 });
 
@@ -596,17 +809,105 @@ ipcMain.handle('open-scan-folder', () => {
   require('child_process').exec(`explorer "${SCAN_DIR}"`);
 });
 
+// Setup-related IPC handlers
+ipcMain.handle('start-setup-server', async () => {
+  try {
+    if (!server) {
+      startLocalServer();
+    }
+    const setupUrl = `http://localhost:4001/setup`;
+    return { success: true, setupUrl };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('open-setup-url', async (event, url) => {
+  const { shell } = require('electron');
+  shell.openExternal(url);
+});
+
+ipcMain.handle('check-setup-complete', async () => {
+  try {
+    const isConfigured = await checkIfConfigured();
+    return { complete: isConfigured };
+  } catch (error) {
+    return { complete: false, error: error.message };
+  }
+});
+
+ipcMain.handle('close-setup-window', () => {
+  if (setupWindow) {
+    setupWindow.close();
+    setupWindow = null;
+  }
+  // Start the main app now that setup is complete
+  startMainApp();
+});
+
+ipcMain.handle('change-scan-folder', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Select Document Folder',
+    defaultPath: SCAN_DIR
+  });
+
+  if (!result.canceled && result.filePaths.length > 0) {
+    const newPath = result.filePaths[0];
+    // Update configuration
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      config.scanDirectory = newPath;
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+
+      // Restart watcher with new path
+      if (watcher) watcher.close();
+      SCAN_DIR = newPath;
+      initializeWatcher();
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+});
+
+ipcMain.handle('test-connection', async () => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/v1/auth/profile`, {
+      headers: {
+        'Authorization': `Bearer ${JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')).token}`
+      },
+      timeout: 5000
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // App event handlers
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initializeApp();
-  createTray();
-  startLocalServer();
-  initializeWatcher();
 
-  // Register machine after a short delay
-  setTimeout(registerMachine, 5000);
+  // Check if app is configured (has token)
+  const isConfigured = await checkIfConfigured();
 
-  console.log('RHV DMS Scanner desktop app started');
+  if (!isConfigured) {
+    // Show setup/login window for first-time users
+    createSetupWindow();
+  } else {
+    // Start silently for configured users
+    createTray();
+    startLocalServer();
+    initializeWatcher();
+
+    // Register machine after a short delay
+    setTimeout(registerMachine, 5000);
+
+    console.log('RHV DMS Scanner desktop app started silently');
+  }
 });
 
 app.on('window-all-closed', (e) => {
@@ -626,7 +927,8 @@ app.on('before-quit', () => {
 // Auto-start functionality (run at login)
 app.setLoginItemSettings({
   openAtLogin: true,
-  openAsHidden: true
+  openAsHidden: true,
+  name: 'Document Scanner'
 });
 
 // Single instance lock
