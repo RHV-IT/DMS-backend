@@ -36,17 +36,26 @@
       "!*.md"
     ],
     "win": {
-      "target": {
-        "target": "nsis",
-        "arch": ["x64"]
-      },
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": true,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
-      "runAfterFinish": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "RHV Scanner Agent",
+      "runAfterFinish": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
     }
   }
 }

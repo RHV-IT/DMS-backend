@@ -9,6 +9,19 @@ const chokidar = require('chokidar');
 const { v4: uuidv4 } = require('uuid');
 const AutoLaunch = require('auto-launch');
 
+// Global error handlers - prevent silent crashes (write to file for debugging)
+const errorLogPath = 'C:\\scanner-error.log';
+process.on('uncaughtException', (err) => {
+  const msg = `[${new Date().toISOString()}] Uncaught Exception: ${err.stack}\n`;
+  try { fs.appendFileSync(errorLogPath, msg); } catch (_) {}
+  console.error(msg);
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = `[${new Date().toISOString()}] Unhandled Rejection: ${reason}\n`;
+  try { fs.appendFileSync(errorLogPath, msg); } catch (_) {}
+  console.error(msg);
+});
+
 // Global variables
 let tray = null;
 let mainWindow = null;
@@ -16,6 +29,7 @@ let server = null;
 let watcher = null;
 let machineId = null;
 let API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
+let autoLauncher = null;
 
 // Constants
 const SCAN_DIR = path.join(os.homedir(), 'Documents', 'RHV Scanner');
@@ -168,11 +182,8 @@ function startLocalServer() {
   // Health endpoint
   expressApp.get('/health', (req, res) => {
     res.json({
-      status: 'running',
-      machineId: machineId,
-      scanDirectory: SCAN_DIR,
-      timestamp: new Date().toISOString(),
-      version: app.getVersion()
+      success: true,
+      message: "Scanner Agent Running"
     });
   });
 
@@ -188,7 +199,7 @@ function startLocalServer() {
   });
 
   server = expressApp.listen(4001, '127.0.0.1', () => {
-    console.log('Local server running on http://localhost:4001');
+    console.log("Scanner Agent API running on port 4001");
   });
 }
 
@@ -249,13 +260,25 @@ ipcMain.handle('open-scan-folder', () => {
 
 // App event handlers
 app.whenReady().then(() => {
-  initializeApp();
-  createTray();
+  // Start server FIRST before anything else
   startLocalServer();
+
+  initializeApp();
   initializeWatcher();
   setupAutoLaunch();
 
+  createTray();
+
+  if (process.platform === 'win32') {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      openAsHidden: true,
+      name: 'RHV Scanner Agent'
+    });
+  }
+
   console.log('RHV Scanner Agent started successfully');
+  if (tray) tray.setToolTip('RHV Scanner Agent - Running');
 });
 
 app.on('window-all-closed', (e) => {
@@ -269,12 +292,7 @@ app.on('before-quit', () => {
   console.log('RHV Scanner Agent shutting down');
 });
 
-// Auto-start functionality
-app.setLoginItemSettings({
-  openAtLogin: true,
-  openAsHidden: true,
-  name: 'RHV Scanner Agent'
-});
+// Auto-start handled in whenReady to ensure proper timing
 
 // Single instance lock
 const gotTheLock = app.requestSingleInstanceLock();
