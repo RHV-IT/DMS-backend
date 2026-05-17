@@ -134,9 +134,8 @@ app.post('/api/v1/test-upload', upload.single('installer'), (req, res) => {
 console.log("Mounted scanner routes");
 app.use('/api/v1/scanner', srcScannerRoutes);
 
-// TEMPORARILY DISABLE PENDING SCAN ROUTES
-// console.log("Mounted pending scans under scanner routes");
-// app.use('/api/v1/scanner', srcPendingScanRoutes);
+console.log("Mounted pending scans under scanner routes");
+app.use('/api/v1/scanner', srcPendingScanRoutes);
 
 console.log("Mounted agents routes");
 app.use('/api/v1/agents', srcAgentRoutes);
