@@ -6,7 +6,7 @@ require('dotenv').config({ path: './api/.env' });
 
 async function uploadInstaller() {
   const mongoUri = process.env.MONGODB_URI;
-  const installerPath = path.join(__dirname, 'scanner-desktop', 'dist', 'DMS-Scanner-Setup.bat');
+  const installerPath = path.join(__dirname, 'scanner-desktop', 'dist', 'RHV Scanner Agent Setup 1.0.0.exe');
 
   console.log('Uploading installer to MongoDB...');
 
@@ -46,7 +46,7 @@ async function uploadInstaller() {
 
     // Insert the new installer
     const installerDoc = {
-      name: 'DMS-Scanner-Setup.exe',
+      name: 'RHV Scanner Agent Setup 1.0.0.exe',
       version: '1.0.0',
       platform: 'windows',
       fileSize: fileBuffer.length,

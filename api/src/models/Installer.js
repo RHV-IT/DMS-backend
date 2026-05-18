@@ -4,7 +4,7 @@ const installerSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    default: 'DMS-Scanner-Setup.exe'
+    default: 'RHV Scanner Agent Setup 1.0.0.exe'
   },
   version: {
     type: String,
