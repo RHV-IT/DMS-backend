@@ -226,45 +226,36 @@ function startLocalServer() {
 
   // Set token - persist immediately
   expressApp.post('/set-token', (req, res) => {
-    const { token, machineId: reqMachineId, userId, userEmail } = req.body;
-
-    console.log("=== /set-token RECEIVED ===");
-    console.log("Token present:", !!token);
-    console.log("MachineId from body:", reqMachineId);
+    const { token, machineId, userId } = req.body;
 
     if (!token) {
-      return res.status(400).json({ error: 'Token is required' });
+      return res.status(400).json({
+        success: false,
+        message: "Token missing"
+      });
     }
 
-    const saved = saveConfig({
-      token,
-      machineId: reqMachineId || machineId,
-      userId,
-      userEmail
-    });
+    const config = loadConfig();
+    config.token = token;
+    config.machineId = machineId || config.machineId;
+    config.userId = userId || null;
+    config.tokenSavedAt = new Date().toISOString();
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 
-    console.log("TOKEN SAVED:", !!saved?.token);
-    console.log("MACHINE ID SAVED:", saved?.machineId);
-    console.log("Current config after save:", saved);
+    const verify = loadConfig();
+    console.log("TOKEN AFTER SAVE:", verify.token);
+    console.log("CONFIG AFTER SAVE:", verify);
 
-    // Force stop any retry loop
-    if (global.tokenRetryInterval) {
-      clearInterval(global.tokenRetryInterval);
-      global.tokenRetryInterval = null;
+    if (!verify.token) {
+      return res.status(500).json({
+        success: false,
+        message: "Token save failed"
+      });
     }
 
-    console.log("TOKEN VERIFIED");
-    console.log("Starting watcher now...");
-
-    // Start watcher immediately
-    if (!global.watcherStarted) {
-      initializeWatcher();
-    }
-
-    res.json({
+    return res.json({
       success: true,
-      message: 'Token set successfully',
-      machineId: saved?.machineId || machineId
+      message: "Token saved successfully"
     });
   });
 
