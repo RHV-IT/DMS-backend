@@ -253,6 +253,20 @@ function startLocalServer() {
       });
     }
 
+    // Force stop any retry loop
+    if (global.tokenRetryInterval) {
+      clearInterval(global.tokenRetryInterval);
+      global.tokenRetryInterval = null;
+    }
+
+    console.log("TOKEN VERIFIED");
+    console.log("Starting watcher now...");
+
+    // Start watcher immediately
+    if (!global.watcherStarted) {
+      initializeWatcher();
+    }
+
     return res.json({
       success: true,
       message: "Token saved successfully"
