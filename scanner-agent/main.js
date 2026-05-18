@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -7,6 +7,14 @@ const si = require('systeminformation');
 
 let mainWindow;
 let agentServer;
+let tray;
+
+// Single instance lock - MUST run before app.whenReady()
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+  process.exit(0);
+}
 
 // Configuration
 const CONFIG_FILE = path.join(os.homedir(), 'Documents', 'RHV-DMS-Scanner', 'config.json');
@@ -174,13 +182,14 @@ function startAgentServer() {
 
   // Set token
   server.post('/set-token', (req, res) => {
-    const { token, userId, userEmail, userName, department } = req.body;
+    const { token, machineId, userId, userEmail, userName, department } = req.body;
 
     if (!token || !userId || !userEmail) {
       return res.status(400).json({ error: 'Token, userId, and userEmail are required' });
     }
 
     config.token = token;
+    if (machineId) config.machineId = machineId;
     config.userId = userId;
     config.userEmail = userEmail;
     config.userName = userName || '';
@@ -188,73 +197,134 @@ function startAgentServer() {
 
     saveConfig(config);
 
+    // Reload fresh from disk
+    const latest = loadConfig();
+    console.log("TOKEN SAVED:", !!latest.token);
+    console.log("MACHINE ID SAVED:", latest.machineId);
+    console.log("Current config:", latest);
+
     // Register with backend after authentication
     registerAgent();
+
+    // Stop retry loop and start watcher immediately
+    if (global.tokenRetryInterval) {
+      clearInterval(global.tokenRetryInterval);
+      global.tokenRetryInterval = null;
+    }
+
+    console.log("TOKEN VERIFIED");
+    startFileWatcher(); // Start watcher now that token exists
 
     res.json({
       success: true,
       message: 'Token set successfully',
-      machineId: config.machineId
+      machineId: latest.machineId
     });
   });
 
-  // Watch scan folder for new files
-  const watcher = chokidar.watch(SCAN_FOLDER, {
-    ignored: /^\./,
-    persistent: true,
-    ignoreInitial: true,
-    awaitWriteFinish: {
-      stabilityThreshold: 2000,
-      pollInterval: 100
-    }
-  });
+  // Real file watcher with full debug logs
+  console.log('Backend URL:', config.backendUrl);
 
-  watcher.on('add', async (filePath) => {
-    console.log('New file detected:', filePath);
+  function startFileWatcher() {
+    if (global.watcherStarted) return;
+    global.watcherStarted = true;
 
-    if (!config.token) {
-      console.log('No token set, skipping upload');
-      return;
-    }
+    console.log("WATCHER STARTED");
 
-    try {
+    const watcher = chokidar.watch(SCAN_FOLDER, {
+      ignored: [/[\/\\]\../, /.*~$/, /\.tmp$/i, /^\.DS_Store$/, /^Thumbs\.db$/i],
+      persistent: true,
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100
+      }
+    });
+
+    console.log('Watching:', SCAN_FOLDER);
+
+    watcher.on('add', async (filePath) => {
+      console.log('NEW FILE DETECTED:', filePath);
+
+      const latestConfig = loadConfig();
+      if (!latestConfig.token || !latestConfig.machineId) {
+        console.log("Waiting for token...");
+        return;
+      }
+      console.log('Current token:', 'EXISTS');
+
       const fileName = path.basename(filePath);
-      const fileExtension = path.extname(filePath).toLowerCase();
-
-      // Only process image/document files
-      const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.tiff', '.bmp'];
-      if (!allowedExtensions.includes(fileExtension)) {
-        console.log('Skipping unsupported file type:', fileExtension);
+      const ext = path.extname(fileName).toLowerCase();
+      const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
+      if (!allowed.includes(ext) || fileName.startsWith('.') || fileName.startsWith('~')) {
+        console.log('Ignoring non-allowed file:', fileName);
         return;
       }
 
-      const FormData = require('form-data');
-      const form = new FormData();
-      form.append('file', fs.createReadStream(filePath));
-      form.append('department', config.department || 'unknown');
-      form.append('uploadedBy', config.userName || 'scanner-agent');
-      form.append('machineId', config.machineId);
+      try {
+        const stats = await waitForFileComplete(filePath);
+        console.log('File fully written:', fileName, stats.size, 'bytes');
 
-      const response = await axios.post(
-        `${config.backendUrl}/api/v1/scanner/upload`,
-        form,
-        {
-          headers: {
-            ...form.getHeaders(),
-            'Authorization': `Bearer ${config.token}`
+        const payload = {
+          machineId: latestConfig.machineId,
+          fileName,
+          originalPath: filePath,
+          fileSize: stats.size
+        };
+
+        console.log('Request body:', payload);
+
+        const response = await axios.post(
+          `${latestConfig.backendUrl}/api/v1/scanner/pending`,
+          payload,
+          { headers: { Authorization: `Bearer ${latestConfig.token}` } }
+        );
+
+        console.log('PENDING SCAN SENT');
+        console.log('BACKEND RESPONSE OK:', response.data);
+      } catch (error) {
+        console.log('Backend URL:', latestConfig.backendUrl);
+        console.log('Axios error:', error.response?.data || error.message);
+      }
+    });
+
+    watcher.on('change', (filePath) => console.log('CHANGE:', filePath));
+    watcher.on('unlink', (filePath) => console.log('UNLINK:', filePath));
+    watcher.on('error', (err) => console.log('Watcher error:', err));
+  }
+
+  function waitForFileComplete(filePath, timeoutMs = 30000) {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      let lastSize = -1;
+      let stableCount = 0;
+      const check = setInterval(() => {
+        try {
+          if (!fs.existsSync(filePath)) {
+            clearInterval(check);
+            return reject(new Error('File disappeared'));
           }
+          const stats = fs.statSync(filePath);
+          if (stats.size === lastSize) {
+            stableCount++;
+            if (stableCount >= 2) {
+              clearInterval(check);
+              return resolve(stats);
+            }
+          } else {
+            stableCount = 0;
+            lastSize = stats.size;
+          }
+        } catch (e) {}
+        if (Date.now() - start > timeoutMs) {
+          clearInterval(check);
+          reject(new Error('File stability timeout'));
         }
-      );
+      }, 1000);
+    });
+  }
 
-      console.log('File uploaded successfully:', fileName);
-
-      // Optionally move or delete the file after successful upload
-      // fs.unlinkSync(filePath);
-
-    } catch (error) {
-      console.error('Failed to upload file:', error.message);
-    }
-  });
+  // Watcher is now started only via startFileWatcher() after token is saved
 
   agentServer = server.listen(config.port, 'localhost', () => {
     console.log(`Scanner agent running on http://localhost:${config.port}`);
@@ -288,6 +358,20 @@ function createWindow() {
 
   // Hide the window completely
   mainWindow.hide();
+
+  // Create tray icon (safe - won't crash if missing)
+  const trayIconPath = path.join(__dirname, 'assets', 'tray-icon.png');
+  if (fs.existsSync(trayIconPath)) {
+    tray = new Tray(trayIconPath);
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'Show Status', click: () => { /* future */ } },
+      { label: 'Quit', click: () => app.quit() }
+    ]);
+    tray.setToolTip('RHV DMS Scanner Agent');
+    tray.setContextMenu(contextMenu);
+  } else {
+    console.log('Tray icon missing');
+  }
 }
 
 app.whenReady().then(() => {
@@ -295,7 +379,20 @@ app.whenReady().then(() => {
   startAgentServer();
   createWindow();
 
-  // Register with backend on startup if we have credentials
+  // Wait for token before starting watcher (retry every 5s)
+  global.tokenRetryInterval = setInterval(() => {
+    const latestConfig = loadConfig();
+    if (latestConfig.token && latestConfig.machineId) {
+      console.log("TOKEN VERIFIED");
+      clearInterval(global.tokenRetryInterval);
+      global.tokenRetryInterval = null;
+      startFileWatcher();
+    } else {
+      console.log("Waiting for token...");
+      console.log("Current config:", latestConfig);
+    }
+  }, 5000);
+
   const config = loadConfig();
   if (config.token && config.userId) {
     registerAgent();
