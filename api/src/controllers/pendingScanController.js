@@ -91,12 +91,12 @@ const scannerController = {
   uploadPending: async (req, res, next) => {
     try {
       // Accept ONLY JSON metadata - no file upload at this stage
-      const { machineId, fileName, originalPath, fileSize } = req.body;
+      const { machineId, fileName, originalPath, fileSize, mimeType } = req.body;
 
-      if (!machineId || !fileName || !originalPath || !fileSize) {
+      if (!machineId || !fileName || !originalPath || !fileSize || !mimeType) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required fields: machineId, fileName, originalPath, fileSize'
+          message: 'Missing required fields: machineId, fileName, originalPath, fileSize, mimeType'
         });
       }
 
@@ -108,12 +108,15 @@ const scannerController = {
       const fileFingerprint = `${finalMachineId}:${fileName}:${fileSize}`;
 
       // Debug logging
+      console.log('REQ BODY:', req.body);
+      console.log('MIME TYPE RECEIVED:', req.body.mimeType);
       console.log('[SCANNER PENDING] Metadata received:', {
         fileName,
         fileSize,
         fileFingerprint,
         userId: user?._id,
-        machineId: finalMachineId
+        machineId: finalMachineId,
+        mimeType
       });
 
       // Check for duplicates
@@ -143,7 +146,7 @@ const scannerController = {
         originalName: fileName,
         status: 'pending',
         fileSize,
-        mimeType: null,
+        mimeType: mimeType || 'application/octet-stream',
         department: user?.department || 'unknown',
         assignedTo: user?._id || null,
         machineId: finalMachineId,
