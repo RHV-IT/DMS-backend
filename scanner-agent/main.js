@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const si = require('systeminformation');
+const mime = require('mime-types');
 
 let mainWindow;
 let agentServer;
@@ -265,11 +266,13 @@ function startAgentServer() {
         const stats = await waitForFileComplete(filePath);
         console.log('File fully written:', fileName, stats.size, 'bytes');
 
+        const mimeType = mime.lookup(filePath) || 'application/octet-stream';
         const payload = {
           machineId: latestConfig.machineId,
           fileName,
           originalPath: filePath,
-          fileSize: stats.size
+          fileSize: stats.size,
+          mimeType
         };
 
         console.log('Request body:', payload);
