@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const pendingScanController = require('../controllers/pendingScanController');
 const PendingScan = require('../models/PendingScan');
 const auth = require('../middlewares/authMiddleware');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 
 // Debug endpoint to list all pending scans (public - no auth required)
@@ -69,8 +72,8 @@ router.use(auth);
  * 7. GET /pending/stats - Get stats
  */
 
-// Upload to pending
-router.post('/pending', pendingScanController.uploadPending);
+// Upload to pending (supports file upload for production)
+router.post('/pending', upload.single('file'), pendingScanController.uploadPending);
 
 // List pending scans
 router.get('/pending', pendingScanController.getPendingScans);

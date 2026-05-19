@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const os = require('os');
 const FileConverter = require('../utils/fileConverter');
 const { v4: uuidv4 } = require('uuid');
+const { put } = require('@vercel/blob');
 
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 const UPLOAD_PATH = process.env.UPLOAD_PATH || path.join(os.tmpdir(), 'uploads');
@@ -90,7 +91,6 @@ const scannerController = {
    */
   uploadPending: async (req, res, next) => {
     try {
-      // Accept ONLY JSON metadata - no file upload at this stage
       const { machineId, fileName, originalPath, fileSize, mimeType } = req.body;
 
       if (!machineId || !fileName || !originalPath || !fileSize || !mimeType) {
@@ -137,12 +137,23 @@ const scannerController = {
         });
       }
 
-      // Create PendingScan record (NO FILE STORED YET)
+      let permanentFileUrl = null;
+      let finalFilePath = originalPath;
+
+      if (req.file) {
+        const blob = await put(`pending/${Date.now()}-${fileName}`, req.file.buffer, {
+          access: 'public',
+          contentType: mimeType || req.file.mimetype
+        });
+        permanentFileUrl = blob.url;
+        finalFilePath = blob.url;
+      }
+
       const pendingScan = await PendingScan.create({
         id: uuidv4().replace(/-/g, '').toUpperCase(),
-        filePath: originalPath,
+        filePath: finalFilePath,
         permanentFilePath: null,
-        permanentFileUrl: null,
+        permanentFileUrl,
         originalName: fileName,
         status: 'pending',
         fileSize,
@@ -361,9 +372,10 @@ const scannerController = {
         });
       }
 
-      // Validate permanent file still exists
       const sourceFilePath = pendingScan.permanentFilePath || pendingScan.filePath;
-      if (!fs.existsSync(sourceFilePath)) {
+      const sourceUrl = pendingScan.permanentFileUrl || (sourceFilePath && sourceFilePath.startsWith('http') ? sourceFilePath : null);
+
+      if (!sourceUrl && (!sourceFilePath || !fs.existsSync(sourceFilePath))) {
         return res.status(404).json({
           success: false,
           message: 'Source file not found on disk. It may have been moved or deleted.'
@@ -373,8 +385,17 @@ const scannerController = {
       // Step 1: Convert file if needed
       let conversionResult;
       try {
+        let inputForConvert = sourceFilePath;
+        if (sourceUrl) {
+          const axios = require('axios');
+          const response = await axios.get(sourceUrl, { responseType: 'arraybuffer' });
+          // Write temp file for converter (Vercel /tmp is writable)
+          const tmpPath = path.join(os.tmpdir(), `${uuidv4()}-${path.basename(sourceFilePath || 'scan')}`);
+          fs.writeFileSync(tmpPath, Buffer.from(response.data));
+          inputForConvert = tmpPath;
+        }
         conversionResult = await FileConverter.convert(
-          sourceFilePath,
+          inputForConvert,
           targetFormat,
           { quality: 90 }
         );
