@@ -22,6 +22,7 @@
     "chokidar": "^3.6.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "mime-types": "^3.0.2",
     "uuid": "^9.0.0"
   },
   "build": {
@@ -39,7 +40,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",

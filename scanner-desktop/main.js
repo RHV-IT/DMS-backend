@@ -8,6 +8,7 @@ const axios = require('axios');
 const chokidar = require('chokidar');
 const { v4: uuidv4 } = require('uuid');
 const AutoLaunch = require('auto-launch');
+const mime = require('mime-types');
 
 // Global error handlers - prevent silent crashes (write to file for debugging)
 const errorLogPath = 'C:\\scanner-error.log';
@@ -349,11 +350,14 @@ function initializeWatcher() {
       const stats = await waitForFileComplete(filePath);
       console.log('File fully written:', fileName, stats.size, 'bytes');
 
+      const mimeType = mime.lookup(filePath) || 'application/octet-stream';
+      console.log('DETECTED MIME TYPE:', mimeType);
       const payload = {
-        machineId: machineId,
+        machineId: config.machineId,
         fileName,
         originalPath: filePath,
-        fileSize: stats.size
+        fileSize: stats.size,
+        mimeType
       };
       console.log('Request body:', payload);
 
