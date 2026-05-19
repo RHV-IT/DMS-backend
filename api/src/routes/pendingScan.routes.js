@@ -3,7 +3,7 @@ const router = express.Router();
 const pendingScanController = require('../controllers/pendingScanController');
 const PendingScan = require('../models/PendingScan');
 const auth = require('../middlewares/authMiddleware');
-const { handleScannedUpload } = require('../middlewares/uploadMiddleware');
+
 
 // Debug endpoint to list all pending scans (public - no auth required)
 router.get('/pending-all', async (req, res) => {
@@ -70,7 +70,7 @@ router.use(auth);
  */
 
 // Upload to pending
-router.post('/pending', handleScannedUpload, pendingScanController.uploadPending);
+router.post('/pending', pendingScanController.uploadPending);
 
 // List pending scans
 router.get('/pending', pendingScanController.getPendingScans);

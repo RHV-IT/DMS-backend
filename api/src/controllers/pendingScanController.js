@@ -90,37 +90,33 @@ const scannerController = {
    */
   uploadPending: async (req, res, next) => {
     try {
-      if (!req.file) {
+      // Accept ONLY JSON metadata - no file upload at this stage
+      const { machineId, fileName, originalPath, fileSize } = req.body;
+
+      if (!machineId || !fileName || !originalPath || !fileSize) {
         return res.status(400).json({
           success: false,
-          message: 'No file uploaded'
+          message: 'Missing required fields: machineId, fileName, originalPath, fileSize'
         });
       }
 
-      const { department, uploadedBy, alias, tags, description, machineId, machineName, hostname, localIp, os, osVersion } = req.body;
       const user = req.user;
+      const finalMachineId = machineId;
+      const originalExt = path.extname(fileName).toLowerCase().replace('.', '');
 
-      // Determine original format
-      const originalExt = path.extname(req.file.originalname).toLowerCase().replace('.', '');
-      const fileName = req.file.originalname;
-      const fileSize = req.file.size;
-      const finalMachineId = machineId || 'unknown';
-
-      // Generate file fingerprint for deduplication
-      const fileFingerprint = generateFileFingerprint(req.file.path, fileName, fileSize, finalMachineId);
+      // Generate simple fingerprint from metadata for deduplication
+      const fileFingerprint = `${finalMachineId}:${fileName}:${fileSize}`;
 
       // Debug logging
-      console.log('[SCANNER UPLOAD] Request received:', {
+      console.log('[SCANNER PENDING] Metadata received:', {
         fileName,
         fileSize,
         fileFingerprint,
-        userId: user._id,
-        userEmail: user.email,
-        machineId: finalMachineId,
-        department: department || user?.department || 'unknown'
+        userId: user?._id,
+        machineId: finalMachineId
       });
 
-      // Check for duplicates: same machineId and fileFingerprint with cancelled or uploaded status
+      // Check for duplicates
       const existingScan = await PendingScan.findOne({
         machineId: finalMachineId,
         fileFingerprint,
@@ -128,201 +124,45 @@ const scannerController = {
       });
 
       if (existingScan) {
-        console.log('[SCANNER UPLOAD] Duplicate file detected, rejecting:', {
-          fileFingerprint,
-          existingStatus: existingScan.status,
-          existingId: existingScan.id
-        });
-
-        // Don't create new pending scan, just return info about existing one
         return res.status(409).json({
           success: false,
           message: `File already processed (${existingScan.status})`,
           data: {
             existingId: existingScan.id,
-            status: existingScan.status,
-            processedAt: existingScan.status === 'cancelled' ? existingScan.rejectedAt : existingScan.confirmedAt
+            status: existingScan.status
           }
         });
       }
 
-      // Copy file to permanent storage (safer than move on Windows)
-      const permanentFilename = `${uuidv4()}-${fileName}`;
-      const permanentFilePath = path.resolve(PENDING_UPLOAD_PATH, permanentFilename);
-      const tempFilePath = path.resolve(req.file.path);
-
-      console.log('[SCANNER UPLOAD] Attempting to store file permanently');
-      console.log('[SCANNER UPLOAD] Temp file path:', tempFilePath);
-      console.log('[SCANNER UPLOAD] Permanent file path:', permanentFilePath);
-      console.log('[SCANNER UPLOAD] PENDING_UPLOAD_PATH:', PENDING_UPLOAD_PATH);
-      console.log('[SCANNER UPLOAD] process.cwd():', process.cwd());
-      console.log('[SCANNER UPLOAD] Platform:', process.platform);
-
-      // Ensure pending-uploads directory exists with robust error handling
-      console.log('[SCANNER UPLOAD] Checking PENDING_UPLOAD_PATH:', PENDING_UPLOAD_PATH);
-      console.log('[SCANNER UPLOAD] Current working directory:', process.cwd());
-      console.log('[SCANNER UPLOAD] Platform:', process.platform);
-
-      // Ensure the pending directory exists
-      console.log('[SCANNER UPLOAD] Ensuring pending directory exists:', PENDING_UPLOAD_PATH);
-
-      try {
-        // Try to create the directory (recursive will handle parent directories)
-        fs.mkdirSync(PENDING_UPLOAD_PATH, { recursive: true });
-        console.log('[SCANNER UPLOAD] Pending directory ready');
-      } catch (mkdirErr) {
-        console.error('[SCANNER UPLOAD] Failed to create pending directory:', mkdirErr.message);
-
-        // Try fallback directory in temp
-        const fallbackPath = path.join(os.tmpdir(), 'dms-pending-uploads-' + Date.now());
-        console.log('[SCANNER UPLOAD] Trying fallback path:', fallbackPath);
-
-        try {
-          fs.mkdirSync(fallbackPath, { recursive: true });
-          console.log('[SCANNER UPLOAD] Created fallback directory');
-          PENDING_UPLOAD_PATH = fallbackPath;
-          console.log('[SCANNER UPLOAD] Using fallback path for this upload');
-        } catch (fallbackErr) {
-          console.error('[SCANNER UPLOAD] Fallback directory creation failed:', fallbackErr.message);
-          // Don't throw error, try to proceed with current path
-          console.log('[SCANNER UPLOAD] Proceeding with current path despite mkdir failure');
-        }
-      }
-
-      // Verify temp file exists and is readable
-      const tempFileExists = fs.existsSync(tempFilePath);
-      console.log('[SCANNER UPLOAD] Temp file exists:', tempFileExists);
-
-      if (!tempFileExists) {
-        console.error('[SCANNER UPLOAD] Temp file does not exist:', tempFilePath);
-        throw new Error('Temporary file not found');
-      }
-
-      // Add small delay to ensure file is fully written (Windows file locking issue)
-      console.log('[SCANNER UPLOAD] Waiting 100ms for file to be fully written...');
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Attempt to copy file to permanent storage
-      try {
-        console.log('[SCANNER UPLOAD] Copying file to permanent storage...');
-        await fs.promises.copyFile(tempFilePath, permanentFilePath);
-        console.log('[SCANNER UPLOAD] Copy completed successfully');
-
-        // Verify the copy worked
-        const permanentExists = fs.existsSync(permanentFilePath);
-        console.log('[SCANNER UPLOAD] Permanent file exists after copy:', permanentExists);
-
-        if (!permanentExists) {
-          throw new Error('File copy completed but destination file not found');
-        }
-
-        // Verify file sizes match
-        const tempStats = fs.statSync(tempFilePath);
-        const permanentStats = fs.statSync(permanentFilePath);
-        console.log('[SCANNER UPLOAD] Temp file size:', tempStats.size);
-        console.log('[SCANNER UPLOAD] Permanent file size:', permanentStats.size);
-
-        if (tempStats.size !== permanentStats.size) {
-          throw new Error(`File size mismatch: temp=${tempStats.size}, permanent=${permanentStats.size}`);
-        }
-
-        // Now safe to remove temp file
-        console.log('[SCANNER UPLOAD] Removing temp file...');
-        await fs.promises.unlink(tempFilePath);
-        console.log('[SCANNER UPLOAD] Temp file removed successfully');
-
-      } catch (copyErr) {
-        console.error('[SCANNER UPLOAD] Failed to copy file to permanent storage:', copyErr.message);
-        console.error('[SCANNER UPLOAD] Copy error details:', copyErr);
-
-        // Log more diagnostic information
-        try {
-          const dirStats = fs.statSync(PENDING_UPLOAD_PATH);
-          console.log('[SCANNER UPLOAD] Directory stats:', {
-            mode: dirStats.mode,
-            uid: dirStats.uid,
-            gid: dirStats.gid,
-            size: dirStats.size,
-            isDirectory: dirStats.isDirectory()
-          });
-        } catch (dirErr) {
-          console.error('[SCANNER UPLOAD] Failed to stat directory:', dirErr.message);
-        }
-
-        throw new Error('Failed to store file permanently');
-      }
-
-      // Create PendingScan record with permanent paths
+      // Create PendingScan record (NO FILE STORED YET)
       const pendingScan = await PendingScan.create({
         id: uuidv4().replace(/-/g, '').toUpperCase(),
-        filePath: tempFilePath, // Store the original temp path (though file is now moved)
-        permanentFilePath,
-        permanentFileUrl: `/api/v1/scanner/pending-file/${path.basename(permanentFilePath)}`,
+        filePath: originalPath,
+        permanentFilePath: null,
+        permanentFileUrl: null,
         originalName: fileName,
         status: 'pending',
         fileSize,
-        mimeType: req.file.mimetype,
-        department: department || user?.department || 'unknown',
-        assignedTo: user._id,
+        mimeType: null,
+        department: user?.department || 'unknown',
+        assignedTo: user?._id || null,
         machineId: finalMachineId,
         fileFingerprint,
-        machineMetadata: {
-          machineName: machineName || null,
-          hostname: hostname || null,
-          localIp: localIp || null,
-          os: os || null,
-          osVersion: osVersion || null
-        },
+        machineMetadata: {},
         scannerMetadata: {
-          scannerId: user._id,
+          scannerId: user?._id || null,
           scannedAt: new Date(),
-          originalExtension: originalExt
+          originalExtension: originalExt,
+          originalPath
         }
       });
 
-      console.log('[SCANNER UPLOAD] PendingScan created:', {
-        id: pendingScan.id,
-        machineId: pendingScan.machineId,
-        userId: pendingScan.assignedTo,
-        status: pendingScan.status
-      });
-
-      // Log creation with device info
-      if (user) {
-        const deviceInfo = DeviceInfoExtractor.extractFromScanner({
-          machineId: finalMachineId,
-          machineName: machineName,
-          hostname: hostname,
-          os: os,
-          osVersion: osVersion,
-          localIp: localIp
-        });
-
-        const summary = `${user.name} uploaded ${fileName} from ${machineName || hostname || 'Scanner'} (Scanner Agent)`;
-
-        await AuditLog.create({
-          ...deviceInfo,
-          userId: user._id,
-          userEmail: user.email,
-          action: 'upload',
-          resource: 'pending_scan',
-          resourceId: pendingScan.id,
-          details: {
-            fileName,
-            size: fileSize,
-            department: pendingScan.department,
-            uploadSource: 'scanner_pending',
-            machineId: finalMachineId,
-            fileFingerprint
-          },
-          summary
-        });
-      }
+      console.log('[SCANNER PENDING] Pending scan created:', pendingScan.id);
 
       res.status(201).json({
         success: true,
-        data: pendingScan,
-        message: 'File uploaded to pending. Confirm to finalize.'
+        message: 'Pending scan created',
+        data: pendingScan
       });
     } catch (error) {
       next(error);
