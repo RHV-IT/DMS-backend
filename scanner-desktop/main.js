@@ -31,6 +31,7 @@ let watcher = null;
 let machineId = null;
 let API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
 let autoLauncher = null;
+let server = null;
 
 // Constants
 const SCAN_DIR = path.join(os.homedir(), 'Documents', 'scan');
@@ -200,6 +201,27 @@ function saveConfig(data) {
     console.error('Error saving config:', err.message);
   }
   return null;
+}
+
+function startLocalServer() {
+  const express = require('express');
+  const cors = require('cors');
+  const localApp = express();
+  localApp.use(cors());
+  localApp.use(express.json());
+
+  localApp.get('/status', (req, res) => {
+    res.json({
+      status: 'running',
+      machineId,
+      version: '1.0.0'
+    });
+  });
+
+  const port = 4002;
+  server = localApp.listen(port, () => {
+    console.log(`Local server running on http://localhost:${port}`);
+  });
 }
 
 // Cancelled scans + pending status helpers (same architecture as scanner-agent)
