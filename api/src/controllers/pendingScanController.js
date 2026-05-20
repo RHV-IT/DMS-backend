@@ -13,7 +13,9 @@ const { v4: uuidv4 } = require('uuid');
 const { put } = require('@vercel/blob');
 
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
-const UPLOAD_PATH = process.env.UPLOAD_PATH || path.join(os.tmpdir(), 'uploads');
+const UPLOAD_PATH = process.env.UPLOAD_PATH 
+  ? path.isAbsolute(process.env.UPLOAD_PATH) ? process.env.UPLOAD_PATH : path.join(os.tmpdir(), process.env.UPLOAD_PATH)
+  : path.join(os.tmpdir(), 'uploads');
 // Permanent storage for pending scans (survives serverless restarts)
 // Use a subdirectory of the temp uploads directory for consistency
 let PENDING_UPLOAD_PATH = process.env.PENDING_UPLOAD_PATH || path.join(UPLOAD_PATH, 'pending');
