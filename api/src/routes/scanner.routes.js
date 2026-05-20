@@ -34,8 +34,53 @@ router.get('/test-endpoint', (req, res) => {
 });
 
 router.get('/auto-install-download', async (req, res) => {
-  console.log('🚀 Auto-install-download endpoint called at', new Date().toISOString());
-  res.json({ success: true, message: 'Endpoint reached', timestamp: new Date().toISOString() });
+  try {
+    const installerPath = path.join(__dirname, '../../../../scanner-desktop/dist/RHV Scanner Agent Setup 1.0.0.exe');
+
+    console.log('📥 Auto-install-download requested');
+    console.log('Looking for installer at:', installerPath);
+
+    if (!fs.existsSync(installerPath)) {
+      console.log('❌ Installer file not found on disk');
+      return res.status(404).json({
+        success: false,
+        message: 'Installer not found. Please build the desktop agent first.'
+      });
+    }
+
+    const stats = fs.statSync(installerPath);
+    const fileName = path.basename(installerPath);
+
+    console.log('✅ Serving installer:', fileName, 'Size:', stats.size);
+
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('X-Installer-Version', '1.0.0');
+
+    const fileStream = fs.createReadStream(installerPath);
+    fileStream.pipe(res);
+
+    fileStream.on('end', () => {
+      console.log('✅ Auto-installer download completed');
+    });
+
+    fileStream.on('error', (err) => {
+      console.error('❌ Stream error during download:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Download failed' });
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error in auto-install-download:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to serve installer',
+        error: error.message
+      });
+    }
+  }
 });
 
 router.get('/test-scanner', (req, res) => {
@@ -75,10 +120,7 @@ router.get('/installer-info', async (req, res) => {
   }
 });
 
-router.get('/auto-install-download', async (req, res) => {
-  console.log('🚀 Auto-install-download endpoint called');
-  res.json({ success: true, message: 'Endpoint reached' });
-});
+
 
 router.get('/test-endpoint', (req, res) => {
   console.log('🔧 Test endpoint called');
