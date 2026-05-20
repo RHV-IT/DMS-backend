@@ -305,6 +305,12 @@ function startLocalServer() {
         watcherActive: watcher !== null
       });
     });
+
+    console.log('STARTING LOCAL API SERVER');
+    const port = 4001;
+    server = app.listen(port, "127.0.0.1", () => {
+      console.log("Scanner Agent API running on port 4001");
+      console.log('HEALTH ROUTE READY');
     });
 
     server.on('error', (err) => {
