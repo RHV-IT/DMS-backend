@@ -5,6 +5,7 @@ const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const si = require('systeminformation');
 const mime = require('mime-types');
+const axios = require('axios');
 
 let mainWindow;
 let agentServer;
@@ -20,6 +21,10 @@ if (!gotTheLock) {
 // Configuration
 const CONFIG_FILE = path.join(os.homedir(), 'Documents', 'RHV-DMS-Scanner', 'config.json');
 const SCAN_FOLDER = path.join(os.homedir(), 'Documents', 'Scan');
+const CANCELLED_SCANS_PATH = path.join(os.homedir(), 'Documents', 'RHV-DMS-Scanner', 'cancelled-scans.json');
+
+let pendingUploads = new Map();
+let statusCheckerInterval = null;
 
 // Ensure directories exist
 function ensureDirectories() {
@@ -32,6 +37,32 @@ function ensureDirectories() {
   }
 }
 
+// Cancelled scans helpers
+function loadCancelledScans() {
+  try {
+    if (fs.existsSync(CANCELLED_SCANS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(CANCELLED_SCANS_PATH, 'utf8'));
+      return new Set(data.files || []);
+    }
+  } catch (err) {
+    console.warn('Cancelled scans load error:', err.message);
+  }
+  return new Set();
+}
+
+function saveCancelledScans(cancelled) {
+  try {
+    fs.writeFileSync(CANCELLED_SCANS_PATH, JSON.stringify({
+      files: Array.from(cancelled),
+      lastUpdated: new Date().toISOString()
+    }, null, 2));
+  } catch (err) {
+    console.error('Cancelled scans save error:', err.message);
+  }
+}
+
+let cancelledScans = loadCancelledScans();
+
 // Load or create configuration
 function loadConfig() {
   try {
@@ -42,6 +73,84 @@ function loadConfig() {
   } catch (error) {
     console.error('Error loading config:', error);
   }
+
+// Send file as pending upload (keeps local until confirmed)
+async function sendToPending(filePath, config) {
+  try {
+    const fileName = path.basename(filePath);
+    const stats = await fs.promises.stat(filePath);
+    const mimeType = mime.lookup(filePath) || 'application/octet-stream';
+
+    const FormData = require('form-data');
+    const formData = new FormData();
+
+    formData.append('file', fs.createReadStream(filePath));
+    formData.append('machineId', config.machineId);
+    formData.append('fileName', fileName);
+    formData.append('fileSize', stats.size);
+    formData.append('mimeType', mimeType);
+    formData.append('originalPath', filePath);
+
+    console.log('Uploading to pending:', fileName);
+
+    const response = await axios.post(
+      `${config.backendUrl}/api/v1/scanner/pending`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          Authorization: `Bearer ${config.token}`
+        },
+        timeout: 120000
+      }
+    );
+
+    const pendingId = response.data?.data?.id;
+    if (pendingId) {
+      pendingUploads.set(pendingId, { filePath, fileName, machineId: config.machineId });
+      console.log(`✓ Pending created: ${pendingId} - tracking for approval`);
+      if (!statusCheckerInterval) startStatusChecker(config);
+    }
+
+    return pendingId;
+  } catch (error) {
+    console.error('Pending upload error:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Poll backend for pending status and delete/keep accordingly
+function startStatusChecker(config) {
+  if (statusCheckerInterval) return;
+  statusCheckerInterval = setInterval(async () => {
+    if (pendingUploads.size === 0) return;
+
+    const pendingIds = Array.from(pendingUploads.keys());
+    for (const pendingId of pendingIds) {
+      try {
+        const res = await axios.get(`${config.backendUrl}/api/v1/scanner/pending/${pendingId}`, {
+          headers: { Authorization: `Bearer ${config.token}` }
+        });
+        const scan = res.data?.data;
+        const entry = pendingUploads.get(pendingId);
+        if (!scan || !entry) continue;
+
+        if (scan.status === 'confirmed') {
+          console.log(`✓ Confirmed: ${entry.fileName} - deleting local file`);
+          try { if (fs.existsSync(entry.filePath)) fs.unlinkSync(entry.filePath); } catch {}
+          pendingUploads.delete(pendingId);
+        } else if (scan.status === 'cancelled' || scan.status === 'rejected') {
+          console.log(`✗ ${scan.status}: ${entry.fileName} - keeping local file`);
+          cancelledScans.add(entry.filePath);
+          saveCancelledScans(cancelledScans);
+          pendingUploads.delete(pendingId);
+        }
+      } catch (e) {
+        if (e.response?.status === 404) pendingUploads.delete(pendingId);
+      }
+    }
+  }, 10000);
+}
 
   // Default config
   const defaultConfig = {
@@ -266,25 +375,13 @@ function startAgentServer() {
         const stats = await waitForFileComplete(filePath);
         console.log('File fully written:', fileName, stats.size, 'bytes');
 
-        const mimeType = mime.lookup(filePath) || 'application/octet-stream';
-        const payload = {
-          machineId: latestConfig.machineId,
-          fileName,
-          originalPath: filePath,
-          fileSize: stats.size,
-          mimeType
-        };
+        if (cancelledScans.has(filePath)) {
+          console.log('Skipping cancelled file:', fileName);
+          return;
+        }
 
-        console.log('Request body:', payload);
-
-        const response = await axios.post(
-          `${latestConfig.backendUrl}/api/v1/scanner/pending`,
-          payload,
-          { headers: { Authorization: `Bearer ${latestConfig.token}` } }
-        );
-
+        await sendToPending(filePath, latestConfig);
         console.log('PENDING SCAN SENT');
-        console.log('BACKEND RESPONSE OK:', response.data);
       } catch (error) {
         console.log('Backend URL:', latestConfig.backendUrl);
         console.log('Axios error:', error.response?.data || error.message);

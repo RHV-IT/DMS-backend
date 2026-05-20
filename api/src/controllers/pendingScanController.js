@@ -93,10 +93,17 @@ const scannerController = {
     try {
       const { machineId, fileName, originalPath, fileSize, mimeType } = req.body;
 
-      if (!machineId || !fileName || !originalPath || !fileSize || !mimeType) {
+      if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required fields: machineId, fileName, originalPath, fileSize, mimeType'
+          message: 'File upload required via multipart/form-data'
+        });
+      }
+
+      if (!machineId || !fileName || !fileSize || !mimeType) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required fields: machineId, fileName, fileSize, mimeType'
         });
       }
 
@@ -137,17 +144,12 @@ const scannerController = {
         });
       }
 
-      let permanentFileUrl = null;
-      let finalFilePath = originalPath;
-
-      if (req.file) {
-        const blob = await put(`pending/${Date.now()}-${fileName}`, req.file.buffer, {
-          access: 'public',
-          contentType: mimeType || req.file.mimetype
-        });
-        permanentFileUrl = blob.url;
-        finalFilePath = blob.url;
-      }
+      const blob = await put(`pending/${Date.now()}-${fileName}`, req.file.buffer, {
+        access: 'public',
+        contentType: mimeType || req.file.mimetype
+      });
+      const permanentFileUrl = blob.url;
+      const finalFilePath = blob.url;
 
       const pendingScan = await PendingScan.create({
         id: uuidv4().replace(/-/g, '').toUpperCase(),

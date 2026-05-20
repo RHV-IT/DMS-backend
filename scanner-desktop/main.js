@@ -36,6 +36,10 @@ let autoLauncher = null;
 const SCAN_DIR = path.join(os.homedir(), 'Documents', 'scan');
 const CONFIG_DIR = path.join(app.getPath('userData'), 'config');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
+const CANCELLED_SCANS_PATH = path.join(os.homedir(), 'Documents', 'RHV-DMS-Scanner', 'cancelled-scans.json');
+
+let pendingUploads = new Map();
+let statusCheckerInterval = null;
 
 // Initialize the application
 function initializeApp() {
@@ -198,186 +202,99 @@ function saveConfig(data) {
   return null;
 }
 
-// Start local server
-function startLocalServer() {
-  const expressApp = express();
-  expressApp.use(cors());
-  expressApp.use(express.json());
-
-  // Health endpoint
-  expressApp.get('/health', (req, res) => {
-    res.json({
-      success: true,
-      message: "Scanner Agent Running"
-    });
-  });
-
-  // Status endpoint
-  expressApp.get('/status', (req, res) => {
-    const cfg = loadConfig();
-    res.json({
-      running: true,
-      machineId: machineId,
-      scanDirectory: SCAN_DIR,
-      version: app.getVersion(),
-      apiUrl: API_BASE_URL,
-      hasToken: !!cfg.token
-    });
-  });
-
-  // Set token - persist immediately
-  expressApp.post('/set-token', (req, res) => {
-    const { token, machineId, userId } = req.body;
-
-    if (!token) {
-      return res.status(400).json({
-        success: false,
-        message: "Token missing"
-      });
+// Cancelled scans + pending status helpers (same architecture as scanner-agent)
+function loadCancelledScans() {
+  try {
+    if (fs.existsSync(CANCELLED_SCANS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(CANCELLED_SCANS_PATH, 'utf8'));
+      return new Set(data.files || []);
     }
-
-    const config = loadConfig();
-    config.token = token;
-    config.machineId = machineId || config.machineId;
-    config.userId = userId || null;
-    config.tokenSavedAt = new Date().toISOString();
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-
-    const verify = loadConfig();
-    console.log("TOKEN AFTER SAVE:", verify.token);
-    console.log("CONFIG AFTER SAVE:", verify);
-
-    if (!verify.token) {
-      return res.status(500).json({
-        success: false,
-        message: "Token save failed"
-      });
-    }
-
-    // Force stop any retry loop
-    if (global.tokenRetryInterval) {
-      clearInterval(global.tokenRetryInterval);
-      global.tokenRetryInterval = null;
-    }
-
-    console.log("TOKEN VERIFIED");
-    console.log("Starting watcher now...");
-
-    // Start watcher immediately
-    if (!global.watcherStarted) {
-      initializeWatcher();
-    }
-
-    return res.json({
-      success: true,
-      message: "Token saved successfully"
-    });
-  });
-
-  server = expressApp.listen(4001, '127.0.0.1', () => {
-    console.log("Scanner Agent API running on port 4001");
-  });
+  } catch (_) {}
+  return new Set();
 }
 
-// Wait for file to be fully written
-function waitForFileComplete(filePath, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    let lastSize = -1;
-    let stableCount = 0;
-    const interval = setInterval(() => {
-      try {
-        if (!fs.existsSync(filePath)) {
-          clearInterval(interval);
-          return reject(new Error('File disappeared'));
-        }
-        const stats = fs.statSync(filePath);
-        if (stats.size === lastSize) {
-          stableCount++;
-          if (stableCount >= 2) {
-            clearInterval(interval);
-            return resolve(stats);
-          }
-        } else {
-          stableCount = 0;
-          lastSize = stats.size;
-        }
-      } catch (_) {}
-      if (Date.now() - start > timeoutMs) {
-        clearInterval(interval);
-        reject(new Error('Stability timeout'));
-      }
-    }, 1000);
-  });
+function saveCancelledScans(cancelled) {
+  try {
+    fs.writeFileSync(CANCELLED_SCANS_PATH, JSON.stringify({
+      files: Array.from(cancelled),
+      lastUpdated: new Date().toISOString()
+    }, null, 2));
+  } catch (_) {}
 }
 
-// Initialize file watcher with full debug + pending scan flow
-function initializeWatcher() {
-  if (global.watcherStarted) return;
-  global.watcherStarted = true;
+let cancelledScans = loadCancelledScans();
 
-  console.log('Backend URL:', API_BASE_URL);
-  console.log("WATCHER STARTED");
-
-  watcher = chokidar.watch(SCAN_DIR, {
-    ignored: [/[\/\\]\../, /.*~$/, /\.tmp$/i, /^\.DS_Store$/, /^Thumbs\.db$/i],
-    persistent: true,
-    ignoreInitial: true,
-    awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 100 }
-  });
-
-  console.log('Watching:', SCAN_DIR);
-
-  watcher.on('add', async (filePath) => {
-    console.log('NEW FILE DETECTED:', filePath);
-
-    const config = loadConfig();
-    if (!config.token) {
-      console.log('No token set, skipping');
-      return;
-    }
-    console.log('Current token:', 'EXISTS');
-
+async function sendToPending(filePath, config) {
+  try {
     const fileName = path.basename(filePath);
-    const ext = path.extname(fileName).toLowerCase();
-    const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
-    if (!allowed.includes(ext) || fileName.startsWith('.') || fileName.startsWith('~')) {
-      console.log('Ignoring non-allowed file:', fileName);
-      return;
+    const stats = await fs.promises.stat(filePath);
+    const mimeType = mime.lookup(filePath) || 'application/octet-stream';
+
+    const FormData = require('form-data');
+    const formData = new FormData();
+
+    formData.append('file', fs.createReadStream(filePath));
+    formData.append('machineId', config.machineId || machineId);
+    formData.append('fileName', fileName);
+    formData.append('fileSize', stats.size);
+    formData.append('mimeType', mimeType);
+    formData.append('originalPath', filePath);
+
+    console.log('Uploading to pending (desktop):', fileName);
+
+    const response = await axios.post(
+      `${API_BASE_URL}/api/v1/scanner/pending`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          Authorization: `Bearer ${config.token}`
+        },
+        timeout: 120000
+      }
+    );
+
+    const pendingId = response.data?.data?.id;
+    if (pendingId) {
+      pendingUploads.set(pendingId, { filePath, fileName });
+      console.log(`✓ Pending created: ${pendingId}`);
+      if (!statusCheckerInterval) startStatusChecker(config);
     }
+    return pendingId;
+  } catch (error) {
+    console.error('Desktop pending upload error:', error.response?.data || error.message);
+    throw error;
+  }
+}
 
-    try {
-      const stats = await waitForFileComplete(filePath);
-      console.log('File fully written:', fileName, stats.size, 'bytes');
+function startStatusChecker(config) {
+  if (statusCheckerInterval) return;
+  statusCheckerInterval = setInterval(async () => {
+    if (pendingUploads.size === 0) return;
 
-      const mimeType = mime.lookup(filePath) || 'application/octet-stream';
-      console.log('DETECTED MIME TYPE:', mimeType);
-      const payload = {
-        machineId: config.machineId,
-        fileName,
-        originalPath: filePath,
-        fileSize: stats.size,
-        mimeType
-      };
-      console.log('Request body:', payload);
+    for (const [pendingId, entry] of pendingUploads) {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/v1/scanner/pending/${pendingId}`, {
+          headers: { Authorization: `Bearer ${config.token || loadConfig().token}` }
+        });
+        const scan = res.data?.data;
+        if (!scan) continue;
 
-      const response = await axios.post(
-        `${API_BASE_URL}/api/v1/scanner/pending`,
-        payload,
-        { headers: { Authorization: `Bearer ${config.token}` } }
-      );
-
-      console.log('PENDING SCAN SENT');
-      console.log('BACKEND RESPONSE OK:', response.data);
-    } catch (error) {
-      console.log('Backend URL:', API_BASE_URL);
-      console.log('Axios error:', error.response?.data || error.message);
+        if (scan.status === 'confirmed') {
+          console.log(`✓ Confirmed: ${entry.fileName} - deleting local`);
+          try { fs.existsSync(entry.filePath) && fs.unlinkSync(entry.filePath); } catch {}
+          pendingUploads.delete(pendingId);
+        } else if (scan.status === 'cancelled' || scan.status === 'rejected') {
+          console.log(`✗ ${scan.status}: ${entry.fileName} - keeping`);
+          cancelledScans.add(entry.filePath);
+          saveCancelledScans(cancelledScans);
+          pendingUploads.delete(pendingId);
+        }
+      } catch (e) {
+        if (e.response?.status === 404) pendingUploads.delete(pendingId);
+      }
     }
-  });
-
-  watcher.on('change', (p) => console.log('CHANGE:', p));
-  watcher.on('unlink', (p) => console.log('UNLINK:', p));
-  watcher.on('error', (err) => console.log('Watcher error:', err));
+  }, 10000);
 }
 
 // Setup auto-launch
