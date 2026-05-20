@@ -14,12 +14,12 @@ const mime = require('mime-types');
 const errorLogPath = 'C:\\scanner-error.log';
 process.on('uncaughtException', (err) => {
   const msg = `[${new Date().toISOString()}] Uncaught Exception: ${err.stack}\n`;
-  try { fs.appendFileSync(errorLogPath, msg); } catch (_) {}
+  try { fs.appendFileSync(errorLogPath, msg); } catch (_) { }
   console.error(msg);
 });
 process.on('unhandledRejection', (reason) => {
   const msg = `[${new Date().toISOString()}] Unhandled Rejection: ${reason}\n`;
-  try { fs.appendFileSync(errorLogPath, msg); } catch (_) {}
+  try { fs.appendFileSync(errorLogPath, msg); } catch (_) { }
   console.error(msg);
 });
 
@@ -185,7 +185,7 @@ function loadConfig() {
     if (fs.existsSync(CONFIG_PATH)) {
       return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     }
-  } catch (_) {}
+  } catch (_) { }
   return { token: null, machineId: machineId };
 }
 
@@ -264,7 +264,7 @@ function startLocalServer() {
     });
   });
 
-  const port = 4002;
+  const port = 4001;
   server = localApp.listen(port, () => {
     console.log(`Local server running on http://localhost:${port}`);
   });
@@ -277,7 +277,7 @@ function loadCancelledScans() {
       const data = JSON.parse(fs.readFileSync(CANCELLED_SCANS_PATH, 'utf8'));
       return new Set(data.files || []);
     }
-  } catch (_) {}
+  } catch (_) { }
   return new Set();
 }
 
@@ -287,7 +287,7 @@ function saveCancelledScans(cancelled) {
       files: Array.from(cancelled),
       lastUpdated: new Date().toISOString()
     }, null, 2));
-  } catch (_) {}
+  } catch (_) { }
 }
 
 let cancelledScans = loadCancelledScans();
@@ -350,7 +350,7 @@ function startStatusChecker(config) {
 
         if (scan.status === 'confirmed') {
           console.log(`✓ Confirmed: ${entry.fileName} - deleting local`);
-          try { fs.existsSync(entry.filePath) && fs.unlinkSync(entry.filePath); } catch {}
+          try { fs.existsSync(entry.filePath) && fs.unlinkSync(entry.filePath); } catch { }
           pendingUploads.delete(pendingId);
         } else if (scan.status === 'cancelled' || scan.status === 'rejected') {
           console.log(`✗ ${scan.status}: ${entry.fileName} - keeping`);
