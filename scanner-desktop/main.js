@@ -10,18 +10,31 @@ const { v4: uuidv4 } = require('uuid');
 const AutoLaunch = require('auto-launch');
 const mime = require('mime-types');
 
-// Global error handlers - prevent silent crashes (write to file for debugging)
+// =====================================================
+// GLOBAL CRASH HANDLERS - MUST BE AT THE VERY TOP
+// =====================================================
 const errorLogPath = 'C:\\scanner-error.log';
+
 process.on('uncaughtException', (err) => {
   const msg = `[${new Date().toISOString()}] Uncaught Exception: ${err.stack}\n`;
-  try { fs.appendFileSync(errorLogPath, msg); } catch (_) { }
+  try { fs.appendFileSync(errorLogPath, msg); } catch (_) {}
   console.error(msg);
 });
+
 process.on('unhandledRejection', (reason) => {
   const msg = `[${new Date().toISOString()}] Unhandled Rejection: ${reason}\n`;
-  try { fs.appendFileSync(errorLogPath, msg); } catch (_) { }
+  try { fs.appendFileSync(errorLogPath, msg); } catch (_) {}
   console.error(msg);
 });
+
+console.log('APP STARTING');
+
+// Prevent multiple instances
+if (!app.requestSingleInstanceLock()) {
+  console.log('Another instance is already running. Exiting.');
+  app.quit();
+  return;
+}
 
 // Global variables
 let tray = null;
@@ -31,6 +44,7 @@ let watcher = null;
 let machineId = null;
 let API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
 let autoLauncher = null;
+let isQuiting = false;
 
 // Constants
 const SCAN_DIR = path.join(os.homedir(), 'Documents', 'Scan');
@@ -89,18 +103,27 @@ function loadOrGenerateMachineId() {
   return newMachineId;
 }
 
-// Create system tray
+// Create system tray (wrapped safely)
 function createTray() {
-  // Safe tray icon creation (prevents crash)
-  const trayIconPath = path.join(__dirname, 'assets', 'tray-icon.png');
-  if (fs.existsSync(trayIconPath)) {
-    tray = new Tray(trayIconPath);
-  } else {
-    console.log('Tray icon missing');
-    tray = new Tray(path.join(__dirname, 'assets', 'icon.png')); // fallback if exists
-  }
+  try {
+    console.log('CREATING TRAY');
+    const trayIconPath = path.join(__dirname, 'assets', 'tray-icon.png');
+    let iconPath = trayIconPath;
 
-  const contextMenu = Menu.buildFromTemplate([
+    if (!fs.existsSync(trayIconPath)) {
+      console.log('Tray icon missing');
+      const fallback = path.join(__dirname, 'assets', 'icon.png');
+      if (fs.existsSync(fallback)) {
+        iconPath = fallback;
+      } else {
+        console.warn('No tray icon available - continuing without icon');
+        return; // continue running without tray icon
+      }
+    }
+
+    tray = new Tray(iconPath);
+
+    const contextMenu = Menu.buildFromTemplate([
     {
       label: 'RHV Scanner Agent - Running',
       enabled: false
@@ -129,6 +152,7 @@ function createTray() {
     {
       label: 'Quit Agent',
       click: () => {
+        isQuiting = true;
         app.quit();
       }
     }
@@ -140,6 +164,9 @@ function createTray() {
   tray.on('click', () => {
     createMainWindow();
   });
+  } catch (err) {
+    console.warn('Tray creation failed (non-critical):', err.message);
+  }
 }
 
 // Create main window
@@ -158,7 +185,7 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
-    show: false,
+    show: false,           // Start hidden
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -170,8 +197,18 @@ function createMainWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 
+  // Do NOT show automatically on launch
+  // User can open via tray menu
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    // Only show if explicitly requested later
+  });
+
+  // CRITICAL: Prevent app from quitting when user closes window
+  mainWindow.on('close', (event) => {
+    if (!isQuiting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -367,13 +404,19 @@ function startStatusChecker(config) {
 
 // Setup auto-launch
 function setupAutoLaunch() {
-  autoLauncher = new AutoLaunch({
-    name: 'RHV Scanner Agent',
-    path: process.execPath,
-    isHidden: true
-  });
+  try {
+    autoLauncher = new AutoLaunch({
+      name: 'RHV Scanner Agent',
+      path: process.execPath,
+      isHidden: true
+    });
 
-  autoLauncher.enable();
+    autoLauncher.enable()
+      .then(() => console.log('Auto-launch enabled successfully'))
+      .catch(err => console.warn('Auto-launch enable warning:', err.message));
+  } catch (err) {
+    console.warn('Failed to setup auto-launch:', err.message);
+  }
 }
 
 // IPC handlers
@@ -393,10 +436,19 @@ ipcMain.handle('open-scan-folder', () => {
 
 // App event handlers
 app.whenReady().then(() => {
+  console.log('APP READY');
+
+  console.log('CREATING WINDOW');
+  createMainWindow(); // optional dashboard
+
+  console.log('CREATING TRAY');
+  createTray();
+
+  console.log('STARTING LOCAL SERVER');
   startLocalServer();
+
   initializeApp();
   setupAutoLaunch();
-  createTray();
 
   if (process.platform === 'win32') {
     app.setLoginItemSettings({
@@ -406,17 +458,17 @@ app.whenReady().then(() => {
     });
   }
 
-  // Wait for token before starting watcher (retry every 5s)
+  // Wait for token before starting watcher
   global.tokenRetryInterval = setInterval(() => {
     const latestConfig = loadConfig();
     if (latestConfig.token && latestConfig.machineId) {
       console.log("TOKEN VERIFIED");
       clearInterval(global.tokenRetryInterval);
       global.tokenRetryInterval = null;
+      console.log('STARTING WATCHER');
       initializeWatcher();
     } else {
       console.log("Waiting for token...");
-      console.log("Current config:", latestConfig);
     }
   }, 5000);
 
@@ -425,7 +477,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', (e) => {
-  // Prevent app from quitting when all windows are closed
+  // Never quit when all windows are closed (tray mode)
   e.preventDefault();
 });
 
