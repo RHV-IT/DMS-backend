@@ -33,7 +33,7 @@ let API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
 let autoLauncher = null;
 
 // Constants
-const SCAN_DIR = path.join(os.homedir(), 'Documents', 'scan');
+const SCAN_DIR = path.join(os.homedir(), 'Documents', 'Scan');
 const CONFIG_DIR = path.join(app.getPath('userData'), 'config');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 const CANCELLED_SCANS_PATH = path.join(os.homedir(), 'Documents', 'RHV-DMS-Scanner', 'cancelled-scans.json');

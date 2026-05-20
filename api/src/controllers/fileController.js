@@ -1034,9 +1034,19 @@ deleteFile: async (req, res, next) => {
         return res.status(403).json({ success: false, message: 'No access to file contents' });
       }
 
-      const filePath = path.join(UPLOAD_PATH, file.storagePath);
-      console.log('[PREVIEW] File path:', filePath);
-      
+      // Support both local disk (dev) and Vercel Blob / remote URLs (production)
+      let filePath = file.storagePath;
+
+      if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+        // It's already a remote URL (e.g. Vercel Blob) - redirect
+        console.log('[PREVIEW] Redirecting to blob URL:', filePath);
+        return res.redirect(filePath);
+      }
+
+      // Local disk path
+      filePath = path.join(UPLOAD_PATH, file.storagePath);
+      console.log('[PREVIEW] Local file path:', filePath);
+
       if (!fs.existsSync(filePath)) {
         console.log('[PREVIEW] File not found on disk');
         return res.status(404).json({ success: false, message: 'File not found on disk' });
