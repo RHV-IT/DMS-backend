@@ -31,7 +31,6 @@ let watcher = null;
 let machineId = null;
 let API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
 let autoLauncher = null;
-let server = null;
 
 // Constants
 const SCAN_DIR = path.join(os.homedir(), 'Documents', 'scan');
