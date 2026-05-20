@@ -287,24 +287,36 @@ function initializeWatcher() {
 }
 
 function startLocalServer() {
-  const express = require('express');
-  const cors = require('cors');
-  const localApp = express();
-  localApp.use(cors());
-  localApp.use(express.json());
+  try {
+    console.log('REGISTERING HEALTH ROUTE');
+    const express = require("express");
+    const cors = require("cors");
+    const app = express();
+    app.use(cors());
+    app.use(express.json());
 
-  localApp.get('/status', (req, res) => {
-    res.json({
-      status: 'running',
-      machineId,
-      version: '1.0.0'
+    app.get("/health", (req, res) => {
+      const config = loadConfig();
+      res.status(200).json({
+        success: true,
+        message: "Scanner Agent Running",
+        machineId: config.machineId || machineId || null,
+        hasToken: !!config.token,
+        watcherActive: watcher !== null
+      });
     });
-  });
+    });
 
-  const port = 4001;
-  server = localApp.listen(port, () => {
-    console.log(`Local server running on http://localhost:${port}`);
-  });
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`Port ${port} already in use. Another instance may be running.`);
+      } else {
+        console.error('Server error:', err);
+      }
+    });
+  } catch (err) {
+    console.error('Failed to start local API server:', err);
+  }
 }
 
 // Cancelled scans + pending status helpers (same architecture as scanner-agent)
