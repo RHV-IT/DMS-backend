@@ -202,6 +202,53 @@ function saveConfig(data) {
   return null;
 }
 
+function initializeWatcher() {
+  if (watcher) watcher.close();
+
+  watcher = chokidar.watch(SCAN_DIR, {
+    ignored: /(^|[\/\\])\../,
+    persistent: true,
+    ignoreInitial: true
+  });
+
+  watcher.on('add', async (filePath) => {
+    console.log('NEW FILE DETECTED:', filePath);
+
+    const config = loadConfig();
+    if (!config.token) {
+      console.log('No token set, skipping');
+      return;
+    }
+
+    const fileName = path.basename(filePath);
+    const ext = path.extname(fileName).toLowerCase();
+    const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
+    if (!allowed.includes(ext) || fileName.startsWith('.') || fileName.startsWith('~')) {
+      console.log('Ignoring non-allowed file:', fileName);
+      return;
+    }
+
+    try {
+      // Simple wait for file to be fully written
+      await new Promise(r => setTimeout(r, 1500));
+      const stats = await fs.promises.stat(filePath);
+
+      if (cancelledScans.has(filePath)) {
+        console.log('Skipping cancelled file:', fileName);
+        return;
+      }
+
+      await sendToPending(filePath, config);
+      console.log('PENDING SCAN SENT (desktop)');
+    } catch (error) {
+      console.error('Watcher error:', error.message);
+    }
+  });
+
+  watcher.on('error', (err) => console.error('Watcher error:', err));
+  console.log('Watcher initialized on', SCAN_DIR);
+}
+
 function startLocalServer() {
   const express = require('express');
   const cors = require('cors');
