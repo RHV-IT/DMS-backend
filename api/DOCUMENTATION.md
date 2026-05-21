@@ -522,6 +522,13 @@ Activate a user (admin only).
 
 > **Note:** All file endpoints require `Authorization: Bearer <accessToken>` header.
 
+> **Production Storage (Important for Frontend):** 
+> All uploads (single, bulk, scan, scanner direct/pending-confirm) now use **Vercel Blob** cloud storage.
+> - `storagePath` on File objects is a full public HTTPS URL (e.g. `https://<id>.public.blob.vercel-storage.com/files/...`)
+> - `originalFileName`, `mimeType`, and `uploadedBy` are now populated on all created records.
+> - Preview (`/preview`) and Download (`/download`) endpoints **validate auth + ownership + permissions**, then **stream** the file from the cloud URL with correct headers. No more local disk 404s.
+> - Backend never serves using Windows/local paths in production.
+
 ### Get All Files
 Get all files accessible to user based on role:
 - **Admin**: Can view all files across all departments
@@ -757,22 +764,46 @@ Upload a single file.
 ---
 
 ### Bulk Upload
-Upload multiple files at once.
+Upload multiple files at once. Supports **per-file metadata** for `alias` and `confidentialityLevel`.
 
 **Endpoint:** `POST /api/v1/files/bulk`
 
 **Form Data:**
-| Field | Type | Required |
-|-------|------|----------|
-| files | file[] | Yes (max 10) |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| files | file[] | Yes (max 10) | The files to upload (index order matters) |
+| metadata | string[] | No | JSON string per file, mapped by index to `files[]`. Example: `{"alias":"Patient Scan","confidentialityLevel":"confidential"}` |
+| confidentialityLevel | string | No | Fallback level for all files if no per-file metadata (default: "internal") |
+
+**Per-file metadata mapping:**
+- `files[0]` pairs with `metadata[0]`
+- `files[1]` pairs with `metadata[1]`
+- etc.
+
+**Rules:**
+- If `alias` missing in metadata → uses original filename
+- If `confidentialityLevel` missing → defaults to "internal"
+- Supported levels (exact, lowercase): `public`, `internal`, `confidential`, `highly_confidential`
+- Backend normalizes common variants (e.g. "Confidential", "Highly Confidential")
+
+**Example multipart/form-data (conceptual):**
+```
+files[0] = report.pdf
+files[1] = scan.jpg
+metadata[0] = {"alias":"Q4 Financials","confidentialityLevel":"confidential"}
+metadata[1] = {"alias":"Patient X-Ray"}
+```
 
 **Response (201):**
 ```json
 {
   "success": true,
-  "data": [ ...files array ],
-  "message": "3 files uploaded successfully"
+  "data": [ ...files array with alias, confidentialityLevel, mimeType, originalFileName, uploadedBy per record ],
+  "message": "2 files uploaded successfully"
 }
+```
+
+**Storage Note:** Files are uploaded to Vercel Blob. `storagePath` in the returned File objects will be a full HTTPS URL in production.
 ```
 
 ---
@@ -810,7 +841,7 @@ Upload scanned document (from scanner).
 ---
 
 ### Bulk Scan Upload
-Upload multiple scanned documents.
+Upload multiple scanned documents. (Per-file metadata not yet supported here; uses "internal" level.)
 
 **Endpoint:** `POST /api/v1/files/scan/bulk`
 
@@ -846,7 +877,7 @@ Get specific file metadata.
 ---
 
 ### Download File
-Download a file.
+Download a file. Backend validates permissions then streams from cloud storage (blob URL) or local (dev only) with `Content-Disposition: attachment`.
 
 **Endpoint:** `GET /api/v1/files/:fileId/download`
 
@@ -893,11 +924,13 @@ The Google Docs viewer accesses your file via the internal preview endpoint (`/a
 ---
 
 ### Preview File (Raw)
-Direct file stream for inline browser display (PDF/images only).
+Direct file stream for inline browser display (PDF/images only). 
+
+In production, the backend fetches from Vercel Blob and streams the response with proper `Content-Type`, `Content-Disposition: inline`, and `Cache-Control` headers after permission checks.
 
 **Endpoint:** `GET /api/v1/files/:fileId/preview`
 
-**Response:** File stream with appropriate Content-Type
+**Response:** File stream with appropriate Content-Type (never relies on local disk paths)
 
 ---
 
@@ -2090,10 +2123,13 @@ Upload scanned file to pending confirmation queue with machine isolation.
 **Form Data:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| file | file | Yes | Scanned file (PDF, JPG, PNG, TIFF, BMP) |
-| machineId | string | Yes | Machine identifier (from os.hostname()) |
+| file | file | Yes | Scanned file (PDF, JPG, PNG, TIFF, BMP) — sent as binary buffer |
+| machineId | string | Yes | Machine identifier |
+| fileName | string | Yes | Original filename |
+| fileSize | number | Yes | Size in bytes |
+| mimeType | string | Yes | e.g. "application/pdf", "image/jpeg" |
+| originalPath | string | No | Full path on scanner machine (for reference) |
 | department | string | No | Department name |
-| uploadedBy | string | No | Uploader identifier |
 | machineName | string | No | Machine display name |
 | hostname | string | No | Machine hostname |
 | os | string | No | Operating system |
@@ -2105,15 +2141,21 @@ Upload scanned file to pending confirmation queue with machine isolation.
   "success": true,
   "data": {
     "id": "ABC123...",
-    "filePath": "/pending-uploads/ABC123.pdf",
+    "filePath": "https://<vercel-blob-id>.public.blob.vercel-storage.com/pending/123456-scan001.pdf",
+    "permanentFileUrl": "https://<vercel-blob-id>.public.blob.vercel-storage.com/pending/123456-scan001.pdf",
     "originalName": "scan001.pdf",
+    "mimeType": "application/pdf",
     "fileSize": 2048000,
+    "status": "pending",
     "machineId": "DESKTOP-VQC2MOD",
-    "status": "pending"
+    "department": "Radiology",
+    "assignedTo": "user-object-id"
   },
   "message": "File uploaded to pending. Confirm to finalize."
 }
 ```
+
+**Note:** `filePath` and `permanentFileUrl` are now always Vercel Blob HTTPS URLs. Pending scans store `mimeType`, `originalName`, `status`, `assignedTo` (uploader).
 
 **Machine Isolation:** Each scanner agent only sees pending scans from its own machine, preventing cross-device interference.
 
@@ -2234,6 +2276,31 @@ Retrieve pending scans for confirmation.
 ```
 
 **Note:** Only returns scans with `status = "pending"`. Rejected/uploaded scans are filtered out.
+
+---
+
+### Pending Scan Statistics
+Get counts for dashboard widgets. **Never returns 404 or crashes on empty DB** — always returns safe zero values.
+
+**Endpoint:** `GET /api/v1/scanner/pending/stats`
+
+**Response (200) — always safe:**
+```json
+{
+  "success": true,
+  "data": {
+    "pending": 12,
+    "confirmedToday": 3,
+    "cancelled": 7
+  }
+}
+```
+
+- `pending`: current pending for the user's scope (user/hod/admin)
+- `confirmedToday`: confirmed in last 24h
+- `cancelled`: total cancelled in scope
+
+**Auth:** Required. Respects role-based filtering (admin=all, hod=dept, user=assigned).
 
 ---
 
