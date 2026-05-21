@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
+const { app: appElectron, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -7,515 +7,349 @@ const cors = require('cors');
 const axios = require('axios');
 const chokidar = require('chokidar');
 const { v4: uuidv4 } = require('uuid');
-const AutoLaunch = require('auto-launch');
 const mime = require('mime-types');
+const FormData = require('form-data');
 
-// =====================================================
-// GLOBAL CRASH HANDLERS - MUST BE AT THE VERY TOP
-// =====================================================
-const errorLogPath = 'C:\\scanner-error.log';
-
-process.on('uncaughtException', (err) => {
-  const msg = `[${new Date().toISOString()}] Uncaught Exception: ${err.stack}\n`;
-  try { fs.appendFileSync(errorLogPath, msg); } catch (_) {}
-  console.error(msg);
-});
-
-process.on('unhandledRejection', (reason) => {
-  const msg = `[${new Date().toISOString()}] Unhandled Rejection: ${reason}\n`;
-  try { fs.appendFileSync(errorLogPath, msg); } catch (_) {}
-  console.error(msg);
-});
-
-console.log('APP STARTING');
-
-// Prevent multiple instances
-if (!app.requestSingleInstanceLock()) {
-  console.log('Another instance is already running. Exiting.');
-  app.quit();
-  return;
-}
-
-// Global variables
 let tray = null;
 let mainWindow = null;
 let server = null;
 let watcher = null;
-let machineId = null;
-let API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
-let autoLauncher = null;
+let watcherStarted = false;
 let isQuiting = false;
 
-// Constants
-const SCAN_DIR = path.join(os.homedir(), 'Documents', 'Scan');
-const CONFIG_DIR = path.join(app.getPath('userData'), 'config');
-const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
-const CANCELLED_SCANS_PATH = path.join(os.homedir(), 'Documents', 'RHV-DMS-Scanner', 'cancelled-scans.json');
-
+let config = { token: null, machineId: null, userId: null, tokenSavedAt: null };
 let pendingUploads = new Map();
 let statusCheckerInterval = null;
+let cancelledScans = new Set();
 
-// Initialize the application
+const SCAN_FOLDER = path.join(os.homedir(), 'Documents', 'Scan');
+const CONFIG_DIR = path.join(appElectron.getPath('userData'), 'config');
+const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
+const CANCELLED_SCANS_PATH = path.join(os.homedir(), 'Documents', 'RHV-DMS-Scanner', 'cancelled-scans.json');
+const API_BASE_URL = 'https://rhv-dms-backend.vercel.app';
+
+const gotTheLock = appElectron.requestSingleInstanceLock();
+if (!gotTheLock) {
+  console.log('Another instance already running');
+  appElectron.quit();
+  process.exit(0);
+}
+
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      config = { ...config, ...data };
+    }
+  } catch (_) {}
+  return config;
+}
+
+function saveConfig(data) {
+  try {
+    config = { ...config, ...data };
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  } catch (err) {
+    console.error('Save config error:', err.message);
+  }
+  return config;
+}
+
+function loadCancelledScans() {
+  try {
+    if (fs.existsSync(CANCELLED_SCANS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(CANCELLED_SCANS_PATH, 'utf8'));
+      cancelledScans = new Set(data.files || []);
+    }
+  } catch (_) {}
+}
+
+function saveCancelledScans() {
+  try {
+    if (!fs.existsSync(path.dirname(CANCELLED_SCANS_PATH))) {
+      fs.mkdirSync(path.dirname(CANCELLED_SCANS_PATH), { recursive: true });
+    }
+    fs.writeFileSync(CANCELLED_SCANS_PATH, JSON.stringify({ files: Array.from(cancelledScans), lastUpdated: new Date().toISOString() }, null, 2));
+  } catch (_) {}
+}
+
 function initializeApp() {
-  // Create necessary directories
-  if (!fs.existsSync(SCAN_DIR)) {
-    fs.mkdirSync(SCAN_DIR, { recursive: true });
+  if (!fs.existsSync(SCAN_FOLDER)) {
+    fs.mkdirSync(SCAN_FOLDER, { recursive: true });
   }
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
   }
-
-  // Generate machine ID if not exists
-  machineId = loadOrGenerateMachineId();
-
-  console.log('RHV Scanner Agent initialized');
-  console.log('Scan directory:', SCAN_DIR);
-  console.log('Machine ID:', machineId);
-}
-
-// Generate or load machine ID
-function loadOrGenerateMachineId() {
-  try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-      if (config.machineId) {
-        return config.machineId;
-      }
-    }
-  } catch (err) {
-    console.warn('Error loading config:', err.message);
-  }
-
-  const newMachineId = `machine-${uuidv4()}`;
-  const config = {
-    machineId: newMachineId,
-    apiUrl: API_BASE_URL,
-    installedAt: new Date().toISOString(),
-    version: app.getVersion()
-  };
-
-  try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-  } catch (err) {
-    console.error('Error saving config:', err.message);
-  }
-
-  return newMachineId;
-}
-
-// Create system tray (wrapped safely)
-function createTray() {
-  try {
-    console.log('CREATING TRAY');
-    const trayIconPath = path.join(__dirname, 'assets', 'tray-icon.png');
-    let iconPath = trayIconPath;
-
-    if (!fs.existsSync(trayIconPath)) {
-      console.log('Tray icon missing');
-      const fallback = path.join(__dirname, 'assets', 'icon.png');
-      if (fs.existsSync(fallback)) {
-        iconPath = fallback;
-      } else {
-        console.warn('No tray icon available - continuing without icon');
-        return; // continue running without tray icon
-      }
-    }
-
-    tray = new Tray(iconPath);
-
-    const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'RHV Scanner Agent - Running',
-      enabled: false
-    },
-    { type: 'separator' },
-    {
-      label: 'Open Dashboard',
-      click: () => {
-        createMainWindow();
-      }
-    },
-    {
-      label: 'Open Scan Folder',
-      click: () => {
-        require('child_process').exec(`explorer "${SCAN_DIR}"`);
-      }
-    },
-    { type: 'separator' },
-    {
-      label: 'Restart Agent',
-      click: () => {
-        app.relaunch();
-        app.exit();
-      }
-    },
-    {
-      label: 'Quit Agent',
-      click: () => {
-        isQuiting = true;
-        app.quit();
-      }
-    }
-  ]);
-
-  tray.setToolTip('RHV Scanner Agent');
-  tray.setContextMenu(contextMenu);
-
-  tray.on('click', () => {
-    createMainWindow();
-  });
-  } catch (err) {
-    console.warn('Tray creation failed (non-critical):', err.message);
+  loadConfig();
+  loadCancelledScans();
+  if (!config.machineId) {
+    config.machineId = `machine-${uuidv4()}`;
+    saveConfig(config);
   }
 }
 
-// Create main window
-function createMainWindow() {
+function createWindow() {
   if (mainWindow) {
     mainWindow.show();
     return;
   }
-
-  // Check if icon exists
   let iconPath = path.join(__dirname, 'assets', 'icon.png');
   if (!fs.existsSync(iconPath)) {
     iconPath = undefined;
   }
-
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
-    show: false,           // Start hidden
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      enableRemoteModule: false,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: iconPath
   });
-
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
-
-  // Do NOT show automatically on launch
-  // User can open via tray menu
-  mainWindow.once('ready-to-show', () => {
-    // Only show if explicitly requested later
-  });
-
-  // CRITICAL: Prevent app from quitting when user closes window
   mainWindow.on('close', (event) => {
     if (!isQuiting) {
       event.preventDefault();
       mainWindow.hide();
     }
   });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-// Load config from disk (always fresh)
-function loadConfig() {
-  try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    }
-  } catch (_) { }
-  return { token: null, machineId: machineId };
-}
-
-// Save config synchronously
-function saveConfig(data) {
-  try {
-    const current = loadConfig();
-    const updated = { ...current, ...data };
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(updated, null, 2));
-    return updated;
-  } catch (err) {
-    console.error('Error saving config:', err.message);
+function createTray() {
+  const trayIconPath = path.join(__dirname, 'assets', 'tray-icon.png');
+  if (fs.existsSync(trayIconPath)) {
+    tray = new Tray(trayIconPath);
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'RHV Scanner Agent - Running', enabled: false },
+      { type: 'separator' },
+      { label: 'Open Dashboard', click: () => createWindow() },
+      { label: 'Open Scan Folder', click: () => { require('child_process').exec(`explorer "${SCAN_FOLDER}"`); } },
+      { type: 'separator' },
+      { label: 'Quit Agent', click: () => { isQuiting = true; appElectron.quit(); } }
+    ]);
+    tray.setToolTip('RHV Scanner Agent');
+    tray.setContextMenu(contextMenu);
+    tray.on('click', () => createWindow());
+  } else {
+    console.log('Tray icon missing — skipping tray');
   }
-  return null;
 }
 
-function initializeWatcher() {
-  if (watcher) watcher.close();
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-  watcher = chokidar.watch(SCAN_DIR, {
-    ignored: /(^|[\/\\])\../,
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Scanner Agent Running',
+    hasToken: !!config.token,
+    machineId: config.machineId || null,
+    watcherRunning: watcherStarted
+  });
+});
+
+app.post('/set-token', async (req, res) => {
+  try {
+    console.log('SET TOKEN REQUEST RECEIVED');
+    const { token, machineId, userId } = req.body;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Token is required' });
+    }
+    config.token = token;
+    if (machineId) config.machineId = machineId;
+    if (userId) config.userId = userId;
+    config.tokenSavedAt = new Date().toISOString();
+    saveConfig(config);
+    console.log('TOKEN SAVED');
+    if (!watcherStarted) {
+      startWatcher();
+    }
+    return res.json({ success: true, message: 'Token saved successfully' });
+  } catch (error) {
+    console.error('SET TOKEN ERROR:', error);
+    return res.status(500).json({ success: false, message: 'Failed to save token', error: error.message });
+  }
+});
+
+app.get('/routes', (req, res) => {
+  const routes = [];
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      routes.push({ path: middleware.route.path, methods: middleware.route.methods });
+    }
+  });
+  res.json(routes);
+});
+
+function startWatcher() {
+  if (watcherStarted) {
+    console.log('Watcher already running');
+    return;
+  }
+  if (!config.token) {
+    console.log('No token yet');
+    return;
+  }
+  watcherStarted = true;
+  watcher = chokidar.watch(SCAN_FOLDER, {
+    ignored: [/(^|[\/\\])\../, /\.tmp$/i, /^Thumbs\.db$/i],
     persistent: true,
-    ignoreInitial: true
+    ignoreInitial: true,
+    awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 100 }
   });
-
+  console.log('WATCHER STARTED:', SCAN_FOLDER);
   watcher.on('add', async (filePath) => {
-    console.log('NEW FILE DETECTED:', filePath);
-
-    const config = loadConfig();
-    if (!config.token) {
-      console.log('No token set, skipping');
-      return;
-    }
-
-    const fileName = path.basename(filePath);
-    const ext = path.extname(fileName).toLowerCase();
-    const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
-    if (!allowed.includes(ext) || fileName.startsWith('.') || fileName.startsWith('~')) {
-      console.log('Ignoring non-allowed file:', fileName);
-      return;
-    }
-
-    try {
-      // Simple wait for file to be fully written
-      await new Promise(r => setTimeout(r, 1500));
-      const stats = await fs.promises.stat(filePath);
-
-      if (cancelledScans.has(filePath)) {
-        console.log('Skipping cancelled file:', fileName);
-        return;
-      }
-
-      await sendToPending(filePath, config);
-      console.log('PENDING SCAN SENT (desktop)');
-    } catch (error) {
-      console.error('Watcher error:', error.message);
-    }
+    await processNewFile(filePath);
   });
-
-  watcher.on('error', (err) => console.error('Watcher error:', err));
-  console.log('Watcher initialized on', SCAN_DIR);
+  watcher.on('error', (err) => {
+    console.error('WATCHER ERROR:', err);
+  });
 }
 
-function startLocalServer() {
-  try {
-    console.log('REGISTERING HEALTH ROUTE');
-    const express = require("express");
-    const cors = require("cors");
-    const app = express();
-    app.use(cors());
-    app.use(express.json());
-
-    app.get("/health", (req, res) => {
-      const config = loadConfig();
-      res.status(200).json({
-        success: true,
-        message: "Scanner Agent Running",
-        machineId: config.machineId || machineId || null,
-        hasToken: !!config.token,
-        watcherActive: watcher !== null
-      });
-    });
-
-    console.log('STARTING LOCAL API SERVER');
-    const port = 4001;
-    server = app.listen(port, "127.0.0.1", () => {
-      console.log("Scanner Agent API running on port 4001");
-      console.log('HEALTH ROUTE READY');
-    });
-
-    server.on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        console.warn(`Port ${port} already in use. Another instance may be running.`);
-      } else {
-        console.error('Server error:', err);
-      }
-    });
-  } catch (err) {
-    console.error('Failed to start local API server:', err);
+async function processNewFile(filePath) {
+  if (!config.token) {
+    console.log('No token, skipping upload');
+    return;
   }
-}
-
-// Cancelled scans + pending status helpers (same architecture as scanner-agent)
-function loadCancelledScans() {
+  const fileName = path.basename(filePath);
+  const ext = path.extname(fileName).toLowerCase();
+  const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
+  if (!allowed.includes(ext) || fileName.startsWith('.') || fileName.startsWith('~')) {
+    return;
+  }
   try {
-    if (fs.existsSync(CANCELLED_SCANS_PATH)) {
-      const data = JSON.parse(fs.readFileSync(CANCELLED_SCANS_PATH, 'utf8'));
-      return new Set(data.files || []);
+    await new Promise(r => setTimeout(r, 2000));
+    if (cancelledScans.has(filePath)) {
+      console.log('Skipping cancelled:', fileName);
+      return;
     }
-  } catch (_) { }
-  return new Set();
-}
-
-function saveCancelledScans(cancelled) {
-  try {
-    fs.writeFileSync(CANCELLED_SCANS_PATH, JSON.stringify({
-      files: Array.from(cancelled),
-      lastUpdated: new Date().toISOString()
-    }, null, 2));
-  } catch (_) { }
-}
-
-let cancelledScans = loadCancelledScans();
-
-async function sendToPending(filePath, config) {
-  try {
-    const fileName = path.basename(filePath);
     const stats = await fs.promises.stat(filePath);
     const mimeType = mime.lookup(filePath) || 'application/octet-stream';
-
-    const FormData = require('form-data');
     const formData = new FormData();
-
     formData.append('file', fs.createReadStream(filePath));
-    formData.append('machineId', config.machineId || machineId);
+    formData.append('machineId', config.machineId || '');
     formData.append('fileName', fileName);
-    formData.append('fileSize', stats.size);
     formData.append('mimeType', mimeType);
+    formData.append('fileSize', stats.size);
     formData.append('originalPath', filePath);
-
-    console.log('Uploading to pending (desktop):', fileName);
-
-    const response = await axios.post(
-      `${API_BASE_URL}/api/v1/scanner/pending`,
-      formData,
-      {
-        headers: {
-          ...formData.getHeaders(),
-          Authorization: `Bearer ${config.token}`
-        },
-        timeout: 120000
-      }
-    );
-
+    console.log('Uploading pending:', fileName);
+    const response = await axios.post(`${API_BASE_URL}/api/v1/scanner/pending`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+        Authorization: `Bearer ${config.token}`
+      },
+      timeout: 120000
+    });
     const pendingId = response.data?.data?.id;
     if (pendingId) {
       pendingUploads.set(pendingId, { filePath, fileName });
-      console.log(`✓ Pending created: ${pendingId}`);
-      if (!statusCheckerInterval) startStatusChecker(config);
+      console.log('Pending created:', pendingId);
+      if (!statusCheckerInterval) startStatusChecker();
     }
-    return pendingId;
   } catch (error) {
-    console.error('Desktop pending upload error:', error.response?.data || error.message);
-    throw error;
+    console.error('Process file error:', error.message);
   }
 }
 
-function startStatusChecker(config) {
+function startStatusChecker() {
   if (statusCheckerInterval) return;
   statusCheckerInterval = setInterval(async () => {
     if (pendingUploads.size === 0) return;
-
     for (const [pendingId, entry] of pendingUploads) {
       try {
         const res = await axios.get(`${API_BASE_URL}/api/v1/scanner/pending/${pendingId}`, {
-          headers: { Authorization: `Bearer ${config.token || loadConfig().token}` }
+          headers: { Authorization: `Bearer ${config.token}` }
         });
         const scan = res.data?.data;
         if (!scan) continue;
-
         if (scan.status === 'confirmed') {
-          console.log(`✓ Confirmed: ${entry.fileName} - deleting local`);
-          try { fs.existsSync(entry.filePath) && fs.unlinkSync(entry.filePath); } catch { }
+          console.log('Confirmed, deleting local:', entry.fileName);
+          try { if (fs.existsSync(entry.filePath)) fs.unlinkSync(entry.filePath); } catch {}
           pendingUploads.delete(pendingId);
         } else if (scan.status === 'cancelled' || scan.status === 'rejected') {
-          console.log(`✗ ${scan.status}: ${entry.fileName} - keeping`);
+          console.log('Cancelled, keeping:', entry.fileName);
           cancelledScans.add(entry.filePath);
-          saveCancelledScans(cancelledScans);
+          saveCancelledScans();
           pendingUploads.delete(pendingId);
         }
       } catch (e) {
-        if (e.response?.status === 404) pendingUploads.delete(pendingId);
+        if (e.response && e.response.status === 404) pendingUploads.delete(pendingId);
       }
     }
   }, 10000);
 }
 
-// Setup auto-launch
-function setupAutoLaunch() {
+function setupAutoStart() {
   try {
-    autoLauncher = new AutoLaunch({
-      name: 'RHV Scanner Agent',
-      path: process.execPath,
-      isHidden: true
+    appElectron.setLoginItemSettings({
+      openAtLogin: true,
+      path: process.execPath
     });
-
-    autoLauncher.enable()
-      .then(() => console.log('Auto-launch enabled successfully'))
-      .catch(err => console.warn('Auto-launch enable warning:', err.message));
   } catch (err) {
-    console.warn('Failed to setup auto-launch:', err.message);
+    console.warn('Auto start setup warning:', err.message);
   }
 }
 
-// IPC handlers
-ipcMain.handle('get-status', () => {
-  return {
-    running: true,
-    machineId: machineId,
-    scanDirectory: SCAN_DIR,
-    version: app.getVersion(),
-    apiUrl: API_BASE_URL
-  };
-});
-
-ipcMain.handle('open-scan-folder', () => {
-  require('child_process').exec(`explorer "${SCAN_DIR}"`);
-});
-
-// App event handlers
-app.whenReady().then(() => {
-  console.log('APP READY');
-
-  console.log('CREATING WINDOW');
-  createMainWindow(); // optional dashboard
-
-  console.log('CREATING TRAY');
-  createTray();
-
-  console.log('STARTING LOCAL SERVER');
-  startLocalServer();
-
+appElectron.whenReady().then(() => {
   initializeApp();
-  setupAutoLaunch();
-
-  if (process.platform === 'win32') {
-    app.setLoginItemSettings({
-      openAtLogin: true,
-      openAsHidden: true,
-      name: 'RHV Scanner Agent'
-    });
+  createWindow();
+  createTray();
+  server = app.listen(4001, '127.0.0.1', () => {
+    console.log('LOCAL API RUNNING ON 4001');
+  });
+  server.on('error', (err) => {
+    console.error('SERVER ERROR:', err);
+  });
+  setupAutoStart();
+  if (config.token) {
+    startWatcher();
+  } else {
+    const tokenCheck = setInterval(() => {
+      loadConfig();
+      if (config.token && !watcherStarted) {
+        clearInterval(tokenCheck);
+        startWatcher();
+      }
+    }, 5000);
   }
-
-  // Wait for token before starting watcher
-  global.tokenRetryInterval = setInterval(() => {
-    const latestConfig = loadConfig();
-    if (latestConfig.token && latestConfig.machineId) {
-      console.log("TOKEN VERIFIED");
-      clearInterval(global.tokenRetryInterval);
-      global.tokenRetryInterval = null;
-      console.log('STARTING WATCHER');
-      initializeWatcher();
-    } else {
-      console.log("Waiting for token...");
-    }
-  }, 5000);
-
-  console.log('RHV Scanner Agent started successfully');
-  if (tray) tray.setToolTip('RHV Scanner Agent - Running');
+  console.log('RHV Scanner Agent started');
 });
 
-app.on('window-all-closed', (e) => {
-  // Never quit when all windows are closed (tray mode)
-  e.preventDefault();
-});
+appElectron.on('window-all-closed', () => {});
 
-app.on('before-quit', () => {
+appElectron.on('before-quit', () => {
+  isQuiting = true;
   if (watcher) watcher.close();
   if (server) server.close();
+  if (statusCheckerInterval) clearInterval(statusCheckerInterval);
   console.log('RHV Scanner Agent shutting down');
 });
 
-// Auto-start handled in whenReady to ensure proper timing
-
-// Single instance lock - MUST be before app.whenReady()
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  app.quit();
-  process.exit(0);
-}
-app.on('second-instance', () => {
+appElectron.on('second-instance', () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+});
+
+ipcMain.handle('get-status', () => ({
+  running: true,
+  machineId: config.machineId,
+  scanDirectory: SCAN_FOLDER,
+  hasToken: !!config.token,
+  watcherRunning: watcherStarted
+}));
+
+ipcMain.handle('open-scan-folder', () => {
+  require('child_process').exec(`explorer "${SCAN_FOLDER}"`);
 });

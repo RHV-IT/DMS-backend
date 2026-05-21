@@ -22,43 +22,31 @@
     "chokidar": "^3.6.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "form-data": "^4.0.0",
     "mime-types": "^3.0.2",
     "uuid": "^9.0.0"
   },
   "build": {
     "appId": "com.rhv.scanner",
     "productName": "RHV Scanner Agent",
-    "directories": {
-      "output": "dist"
-    },
+    "asar": true,
     "files": [
       "**/*",
-      "!dist/**/*",
-      "!*.md"
+      "!dist/*",
+      "!release/*"
     ],
+    "directories": {
+      "buildResources": "assets"
+    },
     "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/icon.ico",
-      "requestedExecutionLevel": "asInvoker"
+      "target": "nsis",
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": true,
-      "perMachine": false,
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "RHV Scanner Agent",
-      "runAfterFinish": true,
-      "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico"
+      "createStartMenuShortcut": true
     }
   }
 }

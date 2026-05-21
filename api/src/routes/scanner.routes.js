@@ -35,7 +35,7 @@ router.get('/test-endpoint', (req, res) => {
 
 router.get('/auto-install-download', async (req, res) => {
   try {
-    const installerPath = path.join(__dirname, '../../../../scanner-desktop/dist/RHV Scanner Agent Setup 1.0.0.exe');
+    const installerPath = path.join(__dirname, '../../../scanner-desktop/dist/RHV Scanner Agent Setup 1.0.0.exe');
 
     console.log('📥 Auto-install-download requested');
     console.log('Looking for installer at:', installerPath);

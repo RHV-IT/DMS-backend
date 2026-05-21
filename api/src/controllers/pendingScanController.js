@@ -379,7 +379,7 @@ const scannerController = {
       const sourceFilePath = pendingScan.permanentFilePath || pendingScan.filePath;
       const sourceUrl = pendingScan.permanentFileUrl || (sourceFilePath && sourceFilePath.startsWith('http') ? sourceFilePath : null);
 
-      if (!sourceUrl && (!sourceFilePath || !fs.existsSync(sourceFilePath))) {
+      if (!sourceUrl && sourceFilePath && !sourceFilePath.startsWith('http') && !fs.existsSync(sourceFilePath)) {
         return res.status(404).json({
           success: false,
           message: 'Source file not found on disk. It may have been moved or deleted.'
@@ -484,19 +484,16 @@ const scannerController = {
         summary
       });
 
-      // Step 7: Delete permanent pending file (SAFE — only after success)
       try {
-        if (fs.existsSync(sourceFilePath)) {
+        if (sourceFilePath && !sourceFilePath.startsWith('http') && fs.existsSync(sourceFilePath)) {
           fs.unlinkSync(sourceFilePath);
           console.log(`[Scanner] Deleted permanent pending file: ${sourceFilePath}`);
         }
-        // Also clean up temp file if it exists
-        if (pendingScan.filePath && pendingScan.filePath !== sourceFilePath && fs.existsSync(pendingScan.filePath)) {
+        if (pendingScan.filePath && pendingScan.filePath !== sourceFilePath && !pendingScan.filePath.startsWith('http') && fs.existsSync(pendingScan.filePath)) {
           fs.unlinkSync(pendingScan.filePath);
         }
       } catch (delErr) {
         console.error(`[Scanner] Failed to delete pending file: ${delErr.message}`);
-        // Don't fail the request — file was converted and saved
       }
 
       // Build response
@@ -730,8 +727,7 @@ const scannerController = {
         });
       }
 
-      // Delete file from disk
-      if (fs.existsSync(pendingScan.filePath)) {
+      if (pendingScan.filePath && !pendingScan.filePath.startsWith('http') && fs.existsSync(pendingScan.filePath)) {
         try {
           fs.unlinkSync(pendingScan.filePath);
         } catch (delErr) {

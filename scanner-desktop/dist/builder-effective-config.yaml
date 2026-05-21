@@ -1,29 +1,20 @@
 directories:
   output: dist
-  buildResources: build
+  buildResources: assets
 appId: com.rhv.scanner
 productName: RHV Scanner Agent
+asar: true
 files:
   - filter:
       - '**/*'
-      - '!dist/**/*'
-      - '!*.md'
+      - '!dist/*'
+      - '!release/*'
 win:
-  target:
-    - target: nsis
-      arch:
-        - x64
+  target: nsis
   icon: assets/icon.ico
-  requestedExecutionLevel: asInvoker
 nsis:
   oneClick: true
-  perMachine: false
   allowToChangeInstallationDirectory: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: RHV Scanner Agent
-  runAfterFinish: true
-  installerIcon: assets/icon.ico
-  uninstallerIcon: assets/icon.ico
-  installerHeaderIcon: assets/icon.ico
 electronVersion: 25.9.8
