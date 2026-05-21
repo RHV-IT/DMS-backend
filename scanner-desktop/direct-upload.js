@@ -5,7 +5,7 @@ const crypto = require('crypto');
 
 async function uploadInstallerDirectly() {
   const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/dms';
-  const installerPath = path.join(__dirname, 'dist', 'DMS-Scanner-Setup.bat');
+    const installerPath = path.join(__dirname, 'dist', 'RHV Scanner Agent Setup 1.0.0.exe');
 
   if (!fs.existsSync(installerPath)) {
     console.error('Installer file not found:', installerPath);
@@ -42,7 +42,7 @@ async function uploadInstallerDirectly() {
 
     // Insert the new installer
     const installerDoc = {
-      name: 'DMS-Scanner-Setup.exe',
+      name: 'RHV Scanner Agent Setup 1.0.0.exe',
       version: '1.0.0',
       platform: 'windows',
       fileSize: fileBuffer.length,

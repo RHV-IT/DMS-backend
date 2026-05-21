@@ -2045,7 +2045,7 @@ Download the scanner agent installer.
 
 **Endpoint:** `GET /api/v1/scanner/auto-install-download`
 
-**Response:** Windows batch installer (.bat) file download
+**Response:** Windows executable installer (`RHV Scanner Agent Setup 1.0.0.exe`) file download
 
 ### Scanner Upload
 

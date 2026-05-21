@@ -140,8 +140,8 @@ router.get('/auto-install-download/direct', async (req, res) => {
 
     console.log('Direct download - Found installer:', installer ? 'YES' : 'NO');
 
-    if (installer) {
-      console.log('Direct download - Sending file:', installer.name, 'Size:', installer.fileSize);
+    if (installer && installer.data && installer.data.length > 100000) {
+      console.log('Direct download - Sending file from DB:', installer.name, 'Size:', installer.fileSize);
 
       // Increment download count
       await Installer.findByIdAndUpdate(installer._id, {
@@ -156,12 +156,31 @@ router.get('/auto-install-download/direct', async (req, res) => {
 
       // Send the binary data
       res.send(installer.data);
-      console.log('✅ Direct download completed');
+      console.log('✅ Direct download completed (from DB)');
       return;
     }
 
-    console.log('❌ Direct download - No installer found');
-    // Installer not available
+    // Fallback: serve the built file directly from disk (guaranteed correct name)
+    console.log('📥 No valid DB installer - falling back to disk file');
+    const diskPath = path.join(__dirname, '../../../scanner-desktop/dist/RHV Scanner Agent Setup 1.0.0.exe');
+
+    if (fs.existsSync(diskPath)) {
+      const stats = fs.statSync(diskPath);
+      const fileName = path.basename(diskPath);
+
+      console.log('✅ Serving from disk:', fileName, 'Size:', stats.size);
+
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', stats.size);
+      res.setHeader('X-Installer-Version', '1.0.0');
+
+      const fileStream = fs.createReadStream(diskPath);
+      fileStream.pipe(res);
+      return;
+    }
+
+    console.log('❌ Direct download - No installer found anywhere');
     res.status(404).json({
       success: false,
       message: 'Installer not available'

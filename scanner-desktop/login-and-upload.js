@@ -8,7 +8,7 @@ async function uploadInstaller() {
     const path = require('path');
     const FormData = require('form-data');
 
-    const installerPath = path.join(__dirname, 'dist', 'DMS-Scanner-Setup.bat');
+    const installerPath = path.join(__dirname, 'dist', 'RHV Scanner Agent Setup 1.0.0.exe');
 
     if (!fs.existsSync(installerPath)) {
       console.error('Installer file not found:', installerPath);
@@ -19,7 +19,7 @@ async function uploadInstaller() {
 
     const form = new FormData();
     form.append('installer', fs.createReadStream(installerPath), {
-      filename: 'DMS-Scanner-Setup.exe',
+      filename: 'RHV Scanner Agent Setup 1.0.0.exe',
       contentType: 'application/octet-stream'
     });
     form.append('version', '1.0.0');
