@@ -418,28 +418,48 @@ const scannerController = {
 
       const { buffer, format: finalFormat, mimeType } = conversionResult;
 
-      // Step 2: Save converted file to storage
-      let storageFilename = `${uuidv4()}${path.extname(pendingScan.originalName)}`;
-      if (finalFormat !== path.extname(pendingScan.originalName).toLowerCase().replace('.', '')) {
-        storageFilename = `${uuidv4()}.${finalFormat}`;
+      // Step 2: Save converted file to blob storage (production) or local fallback (dev)
+      let storagePathOrUrl;
+      let usedBlob = false;
+      try {
+        const { put } = require('@vercel/blob');
+        const safeName = pendingScan.originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const blobName = `${Date.now()}-${uuidv4()}-${safeName}`;
+        const blob = await put(`files/confirmed/${blobName}`, buffer, {
+          access: 'public',
+          contentType: mimeType || 'application/octet-stream'
+        });
+        storagePathOrUrl = blob.url;
+        usedBlob = true;
+        console.log('[CONFIRM] Uploaded confirmed scan to blob:', storagePathOrUrl);
+      } catch (blobErr) {
+        console.warn('[CONFIRM] Blob upload failed (no token or dev?), falling back to local disk:', blobErr.message);
+        // Fallback for local dev without BLOB token
+        let storageFilename = `${uuidv4()}${path.extname(pendingScan.originalName)}`;
+        if (finalFormat !== path.extname(pendingScan.originalName).toLowerCase().replace('.', '')) {
+          storageFilename = `${uuidv4()}.${finalFormat}`;
+        }
+        const localStoragePath = path.join(UPLOAD_PATH, storageFilename);
+        await fs.promises.writeFile(localStoragePath, buffer);
+        storagePathOrUrl = storageFilename;
       }
 
-      const storagePath = path.join(UPLOAD_PATH, storageFilename);
-      await fs.promises.writeFile(storagePath, buffer);
-
-      // Step 3: Create File record
+      // Step 3: Create File record (always store blob url or filename in storagePath)
       const file = await File.create({
         name: pendingScan.originalName,
+        originalFileName: pendingScan.originalName,
         alias: alias || pendingScan.originalName,
         type: finalFormat,
         size: buffer.length,
         owner: user._id,
+        uploadedBy: user._id,
         department: pendingScan.department,
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: confidentialityLevel,
+        mimeType: mimeType || 'application/octet-stream',
         isScanned: true,
         uploadSource: 'scanner',
-        storagePath: storageFilename,
+        storagePath: storagePathOrUrl,
         description: description || undefined
       });
 
@@ -447,7 +467,7 @@ const scannerController = {
       await FileVersion.create({
         fileId: file._id,
         versionNumber: 1,
-        filePath: storageFilename,
+        filePath: storagePathOrUrl,
         size: buffer.length,
         uploadedBy: user._id
       });
@@ -485,12 +505,20 @@ const scannerController = {
       });
 
       try {
-        if (sourceFilePath && !sourceFilePath.startsWith('http') && fs.existsSync(sourceFilePath)) {
-          fs.unlinkSync(sourceFilePath);
-          console.log(`[Scanner] Deleted permanent pending file: ${sourceFilePath}`);
-        }
-        if (pendingScan.filePath && pendingScan.filePath !== sourceFilePath && !pendingScan.filePath.startsWith('http') && fs.existsSync(pendingScan.filePath)) {
-          fs.unlinkSync(pendingScan.filePath);
+        const sources = [sourceFilePath, pendingScan.filePath, pendingScan.permanentFileUrl].filter(Boolean);
+        for (const s of sources) {
+          if (s.startsWith('http://') || s.startsWith('https://')) {
+            try {
+              const { del } = require('@vercel/blob');
+              await del(s);
+              console.log(`[Scanner] Deleted blob pending file: ${s}`);
+            } catch (bErr) {
+              console.error(`[Scanner] Blob delete pending failed: ${bErr.message}`);
+            }
+          } else if (!s.startsWith('http') && fs.existsSync(s)) {
+            fs.unlinkSync(s);
+            console.log(`[Scanner] Deleted local pending file: ${s}`);
+          }
         }
       } catch (delErr) {
         console.error(`[Scanner] Failed to delete pending file: ${delErr.message}`);
@@ -727,11 +755,23 @@ const scannerController = {
         });
       }
 
-      if (pendingScan.filePath && !pendingScan.filePath.startsWith('http') && fs.existsSync(pendingScan.filePath)) {
-        try {
-          fs.unlinkSync(pendingScan.filePath);
-        } catch (delErr) {
-          console.error(`Failed to delete file: ${delErr.message}`);
+      // Delete storage: blob or local
+      const pStorage = pendingScan.permanentFileUrl || pendingScan.filePath || pendingScan.permanentFilePath;
+      if (pStorage) {
+        if (pStorage.startsWith('http://') || pStorage.startsWith('https://')) {
+          try {
+            const { del } = require('@vercel/blob');
+            await del(pStorage);
+            console.log('[PENDING DEL] Removed blob for pending:', pStorage);
+          } catch (delErr) {
+            console.error(`Failed to delete blob: ${delErr.message}`);
+          }
+        } else if (!pStorage.startsWith('http') && fs.existsSync(pStorage)) {
+          try {
+            fs.unlinkSync(pStorage);
+          } catch (delErr) {
+            console.error(`Failed to delete file: ${delErr.message}`);
+          }
         }
       }
 
@@ -767,32 +807,41 @@ const scannerController = {
       const user = req.user;
 
       let filter = {};
-      if (user.role === 'admin') {
+      if (user && user.role === 'admin') {
         // Admin can see all
-      } else if (user.role === 'hod') {
+      } else if (user && user.role === 'hod') {
         filter.department = user.department;
-      } else {
+      } else if (user && user._id) {
         filter.assignedTo = user._id;
       }
 
-      const pendingCount = await PendingScan.countDocuments({ ...filter, status: 'pending' });
+      const pendingCount = await PendingScan.countDocuments({ ...filter, status: 'pending' }).catch(() => 0);
       const confirmedToday = await PendingScan.countDocuments({
         ...filter,
         status: 'confirmed',
         createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-      });
-      const cancelledCount = await PendingScan.countDocuments({ ...filter, status: 'cancelled' });
+      }).catch(() => 0);
+      const cancelledCount = await PendingScan.countDocuments({ ...filter, status: 'cancelled' }).catch(() => 0);
 
       res.json({
         success: true,
         data: {
-          pending: pendingCount,
-          confirmedToday,
-          cancelled: cancelledCount
+          pending: pendingCount || 0,
+          confirmedToday: confirmedToday || 0,
+          cancelled: cancelledCount || 0
         }
       });
     } catch (error) {
-      next(error);
+      // NEVER crash or 404 on stats - always return safe zeros
+      console.error('[STATS] Error computing pending stats (returning safe zeros):', error.message);
+      res.json({
+        success: true,
+        data: {
+          pending: 0,
+          confirmedToday: 0,
+          cancelled: 0
+        }
+      });
     }
   }
 };

@@ -139,19 +139,38 @@ const scannerController = {
       const fileType = path.extname(req.file.originalname).toLowerCase().replace('.', '');
       const isScannedDoc = ['pdf', 'jpg', 'jpeg', 'png', 'tiff', 'bmp'].includes(fileType);
 
-      const file = await File.create({
-        name: req.file.originalname,
-        alias: alias || req.file.originalname,
-        type: fileType,
-        size: req.file.size,
-        owner: user?._id || null,
-        department: department || user?.department || 'unknown',
-        tags: tags ? tags.split(',').map(t => t.trim()) : [],
-        confidentialityLevel: confidentialityLevel || 'internal',
-        isScanned: isScannedDoc,
-        uploadSource: 'scanner',
-        storagePath: req.file.filename
-      });
+       // Ensure blob storage, no local windows paths
+       let storageLocation = req.file.filename;
+       try {
+         const { put } = require('@vercel/blob');
+         const localP = req.file.path || req.file.filename;
+         const buf = fs.readFileSync(localP);
+         const safe = req.file.originalname.replace(/[^a-z0-9.-]/gi, '_');
+         const blob = await put(`files/scanner-direct/${Date.now()}-${safe}`, buf, {
+           access: 'public',
+           contentType: req.file.mimetype || 'application/octet-stream'
+         });
+         storageLocation = blob.url;
+         try { fs.unlinkSync(localP); } catch {}
+       } catch (e) { console.warn('scanner direct blob fail:', e.message); }
+
+       const file = await File.create({
+         name: req.file.originalname,
+         originalFileName: req.file.originalname,
+         alias: alias || req.file.originalname,
+         type: fileType,
+         size: req.file.size,
+         owner: user?._id || null,
+         uploadedBy: user?._id || null,
+         department: department || user?.department || 'unknown',
+         tags: tags ? tags.split(',').map(t => t.trim()) : [],
+         confidentialityLevel: confidentialityLevel || 'internal',
+         mimeType: req.file.mimetype || 'application/octet-stream',
+         isScanned: isScannedDoc,
+         uploadSource: 'scanner',
+         storagePath: storageLocation
+       });
+
 
       if (user) {
         await AuditLog.create({
@@ -197,18 +216,36 @@ const scannerController = {
       const { department, uploadedBy, notes } = req.body;
       const fileType = path.extname(req.file.originalname).toLowerCase().replace('.', '');
 
+      // blob storage
+      let storageLocation = req.file.filename;
+      try {
+        const { put } = require('@vercel/blob');
+        const localP = req.file.path || req.file.filename;
+        const buf = fs.readFileSync(localP);
+        const safe = req.file.originalname.replace(/[^a-z0-9.-]/gi, '_');
+        const blob = await put(`files/scanner-simple/${Date.now()}-${safe}`, buf, {
+          access: 'public',
+          contentType: req.file.mimetype || 'application/octet-stream'
+        });
+        storageLocation = blob.url;
+        try { fs.unlinkSync(localP); } catch {}
+      } catch (e) { console.warn('scanner simple blob fail:', e.message); }
+
       const file = await File.create({
         name: req.file.originalname,
+        originalFileName: req.file.originalname,
         alias: req.file.originalname,
         type: fileType,
         size: req.file.size,
         owner: req.user?._id || null,
+        uploadedBy: req.user?._id || null,
         department: department || req.body.department || 'unknown',
         tags: [],
         confidentialityLevel: req.body.confidentialityLevel || 'internal',
+        mimeType: req.file.mimetype || 'application/octet-stream',
         isScanned: ['pdf', 'jpg', 'jpeg', 'png'].includes(fileType),
         uploadSource: 'scanner',
-        storagePath: req.file.filename
+        storagePath: storageLocation
       });
 
       const fileUrl = `${req.protocol}://${req.get('host')}/api/v1/files/${file.fileId}`;

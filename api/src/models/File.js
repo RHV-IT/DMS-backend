@@ -15,6 +15,16 @@ const fileSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  originalFileName: {
+    type: String
+  },
+  mimeType: {
+    type: String
+  },
+  uploadedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   type: {
     type: String,
     required: true

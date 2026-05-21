@@ -26,33 +26,60 @@ const fileController = {
       const { alias, tags, confidentialityLevel } = req.body;
       const user = req.user;
 
-const userLevels = user.confidentialityLevels || ['public'];
-       const fileLevel = confidentialityLevel || 'internal';
+      const userLevels = user.confidentialityLevels || ['public'];
+      let fileLevel = confidentialityLevel || 'internal';
 
-       if (!userLevels.includes(fileLevel)) {
-         return res.status(403).json({
-           success: false,
-           message: 'Not authorized to create files at this confidentiality level'
-         });
-       }
+      // normalize
+      const normalized = String(fileLevel).toLowerCase().trim();
+      if (normalized.includes('high')) fileLevel = 'highly_confidential';
+      else if (normalized.includes('conf')) fileLevel = 'confidential';
+      else if (normalized.includes('int')) fileLevel = 'internal';
+      else fileLevel = 'public';
 
-       const file = await File.create({
+      if (!userLevels.includes(fileLevel)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized to create files at this confidentiality level'
+        });
+      }
+
+      // Upload to blob to eliminate local path dependency
+      let storageLocation = req.file.filename;
+      try {
+        const { put } = require('@vercel/blob');
+        const localPath = req.file.path || path.join(UPLOAD_PATH, req.file.filename);
+        const buffer = fs.readFileSync(localPath);
+        const safeName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const blob = await put(`files/${Date.now()}-${safeName}`, buffer, {
+          access: 'public',
+          contentType: req.file.mimetype || 'application/octet-stream'
+        });
+        storageLocation = blob.url;
+        try { if (localPath && fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch {}
+      } catch (e) {
+        console.warn('[UPLOAD] Blob upload failed, local fallback:', e.message);
+      }
+
+      const file = await File.create({
         name: req.file.originalname,
+        originalFileName: req.file.originalname,
         alias: alias || req.file.originalname,
         type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
         size: req.file.size,
         owner: user._id,
+        uploadedBy: user._id,
         department: user.department,
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: fileLevel,
+        mimeType: req.file.mimetype || 'application/octet-stream',
         isScanned: false,
-        storagePath: req.file.filename
+        storagePath: storageLocation
       });
 
       await FileVersion.create({
         fileId: file._id,
         versionNumber: 1,
-        filePath: req.file.filename,
+        filePath: storageLocation,
         size: req.file.size,
         uploadedBy: user._id
       });
@@ -77,42 +104,93 @@ const userLevels = user.confidentialityLevels || ['public'];
     }
   },
 
+
   uploadBulk: async (req, res, next) => {
     try {
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ success: false, message: 'No files uploaded' });
       }
 
-const { confidentialityLevel } = req.body;
-       const user = req.user;
-       const fileLevel = confidentialityLevel || 'internal';
-       const userLevels = user.confidentialityLevels || ['public'];
+      const user = req.user;
+      const userLevels = user.confidentialityLevels || ['public'];
 
-       if (!userLevels.includes(fileLevel)) {
-         return res.status(403).json({
-           success: false,
-           message: 'Not authorized to create files at this confidentiality level'
-         });
-       }
+      // Support per-file metadata[] (JSON strings) mapped by index to files[]
+      // Also fallback to single confidentialityLevel for all if no metadata
+      let metadataArray = [];
+      if (req.body.metadata) {
+        const rawMeta = Array.isArray(req.body.metadata) ? req.body.metadata : [req.body.metadata];
+        metadataArray = rawMeta.map(m => {
+          if (typeof m === 'string') {
+            try { return JSON.parse(m); } catch { return {}; }
+          }
+          return m || {};
+        });
+      }
+      const globalLevel = req.body.confidentialityLevel || 'internal';
 
       const files = [];
+      const errors = [];
 
-      for (const file of req.files) {
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        const meta = metadataArray[i] || {};
+        const alias = meta.alias || file.originalname;
+        let fileLevel = meta.confidentialityLevel || globalLevel || 'internal';
+
+        // Normalize level to enum values
+        const normalized = String(fileLevel).toLowerCase().trim();
+        if (normalized.includes('high')) fileLevel = 'highly_confidential';
+        else if (normalized.includes('conf')) fileLevel = 'confidential';
+        else if (normalized.includes('int')) fileLevel = 'internal';
+        else fileLevel = 'public';
+
+        if (!userLevels.includes(fileLevel)) {
+          errors.push(`File ${file.originalname}: confidentiality level ${fileLevel} not allowed for user`);
+          continue;
+        }
+
+        // Upload to Vercel Blob for production (no local disk dependency)
+        let storageLocation;
+        try {
+          const { put } = require('@vercel/blob');
+          const localPath = file.path || path.join(UPLOAD_PATH, file.filename);
+          let buffer;
+          try {
+            buffer = fs.readFileSync(localPath);
+          } catch (readErr) {
+            buffer = file.buffer; // if somehow memory
+          }
+          const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+          const blob = await put(`files/bulk/${Date.now()}-${i}-${safeName}`, buffer, {
+            access: 'public',
+            contentType: file.mimetype || 'application/octet-stream'
+          });
+          storageLocation = blob.url;
+          // cleanup temp disk file if existed
+          try { if (localPath && fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch {}
+        } catch (blobErr) {
+          console.warn('[BULK] Blob upload failed, using local filename (dev only):', blobErr.message);
+          storageLocation = file.filename; // fallback, may 404 in prod without disk persist
+        }
+
         const newFile = await File.create({
           name: file.originalname,
-          alias: file.originalname,
+          originalFileName: file.originalname,
+          alias: alias,
           type: path.extname(file.originalname).toLowerCase().replace('.', ''),
           size: file.size,
           owner: user._id,
+          uploadedBy: user._id,
           department: user.department,
           confidentialityLevel: fileLevel,
-          storagePath: file.filename
+          mimeType: file.mimetype || 'application/octet-stream',
+          storagePath: storageLocation
         });
 
         await FileVersion.create({
           fileId: newFile._id,
           versionNumber: 1,
-          filePath: file.filename,
+          filePath: storageLocation,
           size: file.size,
           uploadedBy: user._id
         });
@@ -120,15 +198,25 @@ const { confidentialityLevel } = req.body;
         files.push(newFile);
       }
 
+      if (files.length === 0 && errors.length > 0) {
+        return res.status(403).json({
+          success: false,
+          message: 'No files could be uploaded due to permission errors',
+          errors
+        });
+      }
+
       res.status(201).json({
         success: true,
         data: files,
-        message: `${files.length} files uploaded successfully`
+        message: `${files.length} files uploaded successfully`,
+        errors: errors.length ? errors : undefined
       });
     } catch (error) {
       next(error);
     }
   },
+
 
   downloadFile: async (req, res, next) => {
     try {
@@ -179,11 +267,7 @@ const { confidentialityLevel } = req.body;
         return res.status(403).json({ success: false, message: 'No access to file contents' });
       }
 
-      const filePath = path.join(UPLOAD_PATH, file.storagePath);
-      
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ success: false, message: 'File not found on disk' });
-      }
+      const storageLocation = file.storagePath;
 
       await AuditLog.create({
         userId: req.user._id,
@@ -196,7 +280,41 @@ const { confidentialityLevel } = req.body;
         userAgent: req.get('user-agent')
       });
 
-      res.download(filePath, file.name);
+      if (storageLocation && (storageLocation.startsWith('http://') || storageLocation.startsWith('https://'))) {
+        // Stream download from cloud/blob - no local path ever
+        try {
+          const axios = require('axios');
+          const remoteRes = await axios.get(storageLocation, {
+            responseType: 'stream',
+            timeout: 30000
+          });
+
+          const contentType = remoteRes.headers['content-type'] || file.mimeType || file.type || 'application/octet-stream';
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.alias || file.name || 'file')}"`);
+          if (remoteRes.headers['content-length']) {
+            res.setHeader('Content-Length', remoteRes.headers['content-length']);
+          }
+
+          remoteRes.data.on('error', (err) => {
+            console.error('[DOWNLOAD] Stream error:', err.message);
+            if (!res.headersSent) res.status(500).end();
+          });
+          return remoteRes.data.pipe(res);
+        } catch (fetchErr) {
+          console.error('[DOWNLOAD] Failed to stream from cloud:', fetchErr.message);
+          return res.status(404).json({ success: false, message: 'File not available in storage' });
+        }
+      }
+
+      // Local dev only
+      const localFilePath = path.join(UPLOAD_PATH, storageLocation);
+      
+      if (!fs.existsSync(localFilePath)) {
+        return res.status(404).json({ success: false, message: 'File not found on disk' });
+      }
+
+      res.download(localFilePath, file.name);
     } catch (error) {
       next(error);
     }
@@ -532,13 +650,29 @@ const { confidentialityLevel } = req.body;
       if (req.file) {
         file.currentVersion += 1;
         file.size = req.file.size;
-        file.storagePath = req.file.filename;
         file.name = req.file.originalname;
+
+        // Upload new version to blob
+        let newStorage = req.file.filename;
+        try {
+          const { put } = require('@vercel/blob');
+          const localP = req.file.path || path.join(UPLOAD_PATH, req.file.filename);
+          const buf = fs.readFileSync(localP);
+          const safe = req.file.originalname.replace(/[^a-z0-9.-]/gi, '_');
+          const blob = await put(`files/versions/${Date.now()}-${safe}`, buf, {
+            access: 'public',
+            contentType: req.file.mimetype || 'application/octet-stream'
+          });
+          newStorage = blob.url;
+          try { fs.unlinkSync(localP); } catch {}
+        } catch (e) { console.warn('version blob fail:', e.message); }
+
+        file.storagePath = newStorage;
 
         await FileVersion.create({
           fileId: file._id,
           versionNumber: file.currentVersion,
-          filePath: req.file.filename,
+          filePath: newStorage,
           size: req.file.size,
           uploadedBy: req.user._id
         });
@@ -591,9 +725,21 @@ deleteFile: async (req, res, next) => {
       }
 
       if (req.query.permanent === 'true') {
-        const filePath = path.join(UPLOAD_PATH, file.storagePath);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
+        // Delete from blob if cloud URL, else local (never fs on url)
+        const storage = file.storagePath;
+        if (storage && (storage.startsWith('http://') || storage.startsWith('https://'))) {
+          try {
+            const { del } = require('@vercel/blob');
+            await del(storage);
+            console.log('[DELETE] Removed blob:', storage);
+          } catch (delErr) {
+            console.error('[DELETE] Blob delete failed (may already gone):', delErr.message);
+          }
+        } else {
+          const localPath = path.join(UPLOAD_PATH, storage);
+          if (fs.existsSync(localPath)) {
+            fs.unlinkSync(localPath);
+          }
         }
         await FileVersion.deleteMany({ fileId: file._id });
         await Permission.deleteMany({ fileId: file._id });
@@ -780,9 +926,16 @@ deleteFile: async (req, res, next) => {
         return res.status(403).json({ success: false, message: 'Only admin can permanently delete files' });
       }
 
-      const filePath = path.join(UPLOAD_PATH, file.storagePath);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      // Remove from storage (blob or local) without windows path hardcode
+      const storage = file.storagePath;
+      if (storage && (storage.startsWith('http://') || storage.startsWith('https://'))) {
+        try {
+          const { del } = require('@vercel/blob');
+          await del(storage);
+        } catch (e) { console.error('permanent blob del:', e.message); }
+      } else {
+        const localPath = path.join(UPLOAD_PATH, storage);
+        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
       }
 
       await FileVersion.deleteMany({ fileId: file._id });
@@ -817,9 +970,15 @@ deleteFile: async (req, res, next) => {
       });
 
       for (const file of expiredFiles) {
-        const filePath = path.join(UPLOAD_PATH, file.storagePath);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
+        const storage = file.storagePath;
+        if (storage && (storage.startsWith('http://') || storage.startsWith('https://'))) {
+          try {
+            const { del } = require('@vercel/blob');
+            await del(storage);
+          } catch (e) { console.error('clean blob del:', e.message); }
+        } else {
+          const localPath = path.join(UPLOAD_PATH, storage);
+          if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
         }
         await FileVersion.deleteMany({ fileId: file._id });
         await Permission.deleteMany({ fileId: file._id });
@@ -856,7 +1015,13 @@ deleteFile: async (req, res, next) => {
       const user = req.user;
 
       const allowedLevels = user.confidentialityLevels || [];
-      const fileLevel = confidentialityLevel || 'internal';
+      let fileLevel = confidentialityLevel || 'internal';
+
+      const normalized = String(fileLevel).toLowerCase().trim();
+      if (normalized.includes('high')) fileLevel = 'highly_confidential';
+      else if (normalized.includes('conf')) fileLevel = 'confidential';
+      else if (normalized.includes('int')) fileLevel = 'internal';
+      else fileLevel = 'public';
       
       if (!allowedLevels.includes(fileLevel)) {
         return res.status(403).json({ 
@@ -870,25 +1035,45 @@ deleteFile: async (req, res, next) => {
         path.extname(req.file.originalname).toLowerCase().replace('.', '')
       );
 
+      // Blob upload for scanner files too
+      let storageLocation = req.file.filename;
+      try {
+        const { put } = require('@vercel/blob');
+        const localPath = req.file.path || path.join(UPLOAD_PATH, req.file.filename);
+        const buffer = fs.readFileSync(localPath);
+        const safeName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const blob = await put(`files/scanned/${Date.now()}-${safeName}`, buffer, {
+          access: 'public',
+          contentType: req.file.mimetype || 'application/octet-stream'
+        });
+        storageLocation = blob.url;
+        try { if (localPath && fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch {}
+      } catch (e) {
+        console.warn('[SCANNED UPLOAD] Blob fallback:', e.message);
+      }
+
       const file = await File.create({
         name: req.file.originalname,
+        originalFileName: req.file.originalname,
         alias: alias || req.file.originalname,
         type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
         size: req.file.size,
         owner: user._id,
+        uploadedBy: user._id,
         department: user.department,
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: fileLevel,
+        mimeType: req.file.mimetype || 'application/octet-stream',
         isScanned: isScannedDoc,
         uploadSource: source,
-        storagePath: req.file.filename,
+        storagePath: storageLocation,
         ocrStatus: 'pending'
       });
 
       await FileVersion.create({
         fileId: file._id,
         versionNumber: 1,
-        filePath: req.file.filename,
+        filePath: storageLocation,
         size: req.file.size,
         uploadedBy: user._id
       });
@@ -925,29 +1110,50 @@ deleteFile: async (req, res, next) => {
       const source = uploadSource || 'scanner';
       const files = [];
 
-      for (const file of req.files) {
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
         const isScannedDoc = ['pdf', 'jpg', 'jpeg', 'png', 'tiff', 'bmp'].includes(
           path.extname(file.originalname).toLowerCase().replace('.', '')
         );
 
+        // Blob for scanned bulk
+        let storageLocation = file.filename;
+        try {
+          const { put } = require('@vercel/blob');
+          const localPath = file.path || path.join(UPLOAD_PATH, file.filename);
+          const buffer = fs.readFileSync(localPath);
+          const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+          const blob = await put(`files/scanned-bulk/${Date.now()}-${i}-${safeName}`, buffer, {
+            access: 'public',
+            contentType: file.mimetype || 'application/octet-stream'
+          });
+          storageLocation = blob.url;
+          try { if (localPath && fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch {}
+        } catch (e) {
+          console.warn('[SCANNED BULK] Blob fallback:', e.message);
+        }
+
         const newFile = await File.create({
           name: file.originalname,
+          originalFileName: file.originalname,
           alias: file.originalname,
           type: path.extname(file.originalname).toLowerCase().replace('.', ''),
           size: file.size,
           owner: user._id,
+          uploadedBy: user._id,
           department: user.department,
           confidentialityLevel: 'internal',
+          mimeType: file.mimetype || 'application/octet-stream',
           isScanned: isScannedDoc,
           uploadSource: source,
-          storagePath: file.filename,
+          storagePath: storageLocation,
           ocrStatus: 'pending'
         });
 
         await FileVersion.create({
           fileId: newFile._id,
           versionNumber: 1,
-          filePath: file.filename,
+          filePath: storageLocation,
           size: file.size,
           uploadedBy: user._id
         });
@@ -1034,20 +1240,44 @@ deleteFile: async (req, res, next) => {
         return res.status(403).json({ success: false, message: 'No access to file contents' });
       }
 
-      // Support both local disk (dev) and Vercel Blob / remote URLs (production)
-      let filePath = file.storagePath;
+      // Support both local disk (dev) and Vercel Blob / remote URLs (production) - NEVER use local paths for cloud files
+      const storageLocation = file.storagePath;
 
-      if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-        // It's already a remote URL (e.g. Vercel Blob) - redirect
-        console.log('[PREVIEW] Redirecting to blob URL:', filePath);
-        return res.redirect(filePath);
+      if (storageLocation && (storageLocation.startsWith('http://') || storageLocation.startsWith('https://'))) {
+        // Stream from blob/cloud to ensure valid headers and no redirect leakage
+        console.log('[PREVIEW] Streaming from cloud URL:', storageLocation);
+        try {
+          const axios = require('axios');
+          const remoteRes = await axios.get(storageLocation, {
+            responseType: 'stream',
+            timeout: 30000
+          });
+
+          const contentType = remoteRes.headers['content-type'] || file.mimeType || file.type || 'application/octet-stream';
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.alias || file.name || 'file')}"`);
+          res.setHeader('Cache-Control', 'private, max-age=3600');
+          if (remoteRes.headers['content-length']) {
+            res.setHeader('Content-Length', remoteRes.headers['content-length']);
+          }
+
+          remoteRes.data.on('error', (err) => {
+            console.error('[PREVIEW] Stream error from blob:', err.message);
+            if (!res.headersSent) res.status(500).end();
+          });
+          remoteRes.data.pipe(res);
+          return;
+        } catch (fetchErr) {
+          console.error('[PREVIEW] Failed to fetch from cloud storage:', fetchErr.message);
+          return res.status(404).json({ success: false, message: 'File not available in cloud storage' });
+        }
       }
 
-      // Local disk path
-      filePath = path.join(UPLOAD_PATH, file.storagePath);
-      console.log('[PREVIEW] Local file path:', filePath);
+      // Local disk path (only for dev/non-cloud)
+      const localFilePath = path.join(UPLOAD_PATH, storageLocation);
+      console.log('[PREVIEW] Local file path (dev only):', localFilePath);
 
-      if (!fs.existsSync(filePath)) {
+      if (!fs.existsSync(localFilePath)) {
         console.log('[PREVIEW] File not found on disk');
         return res.status(404).json({ success: false, message: 'File not found on disk' });
       }
@@ -1064,13 +1294,13 @@ deleteFile: async (req, res, next) => {
         'tif': 'image/tiff'
       };
 
-      const contentType = mimeTypes[ext] || file.type || 'application/octet-stream';
+      const contentType = mimeTypes[ext] || file.mimeType || file.type || 'application/octet-stream';
       console.log('[PREVIEW] Content-Type:', contentType);
 
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `inline; filename="${file.name}"`);
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.alias || file.name || 'file')}"`);
       
-      const fileStream = fs.createReadStream(filePath);
+      const fileStream = fs.createReadStream(localFilePath);
       fileStream.pipe(res);
     } catch (error) {
       console.log('[PREVIEW] Error:', error.message);
