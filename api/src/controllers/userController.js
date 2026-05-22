@@ -75,13 +75,19 @@ const userController = {
         return res.status(400).json({ success: false, message: 'Email already registered' });
       }
 
+      const level = confidentialityLevel || 'public';
+      const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
+      const userLevelIndex = levelOrder.indexOf(level);
+      const userLevelsArray = levelOrder.slice(0, userLevelIndex + 1);
+
       const user = await User.create({
         name,
         email,
         password,
         department,
         role: role || 'user',
-        confidentialityLevel: confidentialityLevel || 'public',
+        confidentialityLevels: userLevelsArray,
+        confidentialityLevel: level,
         passwordLastChanged: new Date()
       });
 
@@ -136,7 +142,12 @@ const userController = {
       if (department) user.department = department;
       if (role) user.role = role;
       if (status) user.status = status;
-      if (confidentialityLevel) user.confidentialityLevel = confidentialityLevel;
+      if (confidentialityLevel) {
+        const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
+        const idx = levelOrder.indexOf(confidentialityLevel);
+        user.confidentialityLevels = levelOrder.slice(0, idx + 1);
+        user.confidentialityLevel = confidentialityLevel;
+      }
       user.updatedAt = new Date();
 
       await user.save();

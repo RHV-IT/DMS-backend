@@ -145,6 +145,12 @@ const auth = async (req, res, next) => {
     }
 
     // ================================================================
+    // Auto-normalize confidentiality data on every login (fixes historical clashes)
+    // Admins always get full access, array takes precedence
+    // ================================================================
+    await user.normalizeConfidentiality();
+
+    // ================================================================
     // Attach user data to request for downstream use
     // ================================================================
     req.user = user;

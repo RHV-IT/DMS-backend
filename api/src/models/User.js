@@ -124,13 +124,54 @@ userSchema.methods.addToPasswordHistory = async function () {
 };
 
 userSchema.methods.getConfidentialityLevel = function () {
-  if (this.confidentialityLevel) return this.confidentialityLevel;
-  // fallback for legacy array data: use highest level
+  // Prefer the array and always return the HIGHEST level in it (this resolves clashes)
   if (Array.isArray(this.confidentialityLevels) && this.confidentialityLevels.length > 0) {
     const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
-    return this.confidentialityLevels.sort((a, b) => (ranks[b] || 0) - (ranks[a] || 0))[0];
+    const sorted = [...this.confidentialityLevels].sort((a, b) => (ranks[b] || 0) - (ranks[a] || 0));
+    return sorted[0];
+  }
+  // Fallback to singular only if array is not present
+  if (this.confidentialityLevel) {
+    return this.confidentialityLevel;
   }
   return 'public';
+};
+
+/**
+ * Normalize confidentiality data:
+ * - Ensure admins always have full access array
+ * - Ensure the array's highest level is reflected in singular
+ * - This fixes historical clashes
+ */
+userSchema.methods.normalizeConfidentiality = async function () {
+  const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
+  let changed = false;
+
+  // If admin or hod, force full access
+  if (this.role === 'admin' || this.role === 'hod') {
+    this.confidentialityLevels = levelOrder;
+    this.confidentialityLevel = 'highly_confidential';
+    changed = true;
+  } else {
+    // For normal users, ensure array exists and singular matches highest in array
+    if (!Array.isArray(this.confidentialityLevels) || this.confidentialityLevels.length === 0) {
+      const current = this.confidentialityLevel || 'public';
+      const idx = levelOrder.indexOf(current);
+      this.confidentialityLevels = levelOrder.slice(0, idx + 1);
+      changed = true;
+    }
+    // Keep singular in sync with highest in array
+    const highest = this.getConfidentialityLevel();
+    if (this.confidentialityLevel !== highest) {
+      this.confidentialityLevel = highest;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await this.save();
+  }
+  return changed;
 };
 
 module.exports = mongoose.model('User', userSchema);

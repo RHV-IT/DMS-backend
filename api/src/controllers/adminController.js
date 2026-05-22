@@ -31,7 +31,7 @@ const registerAdmin = async (req, res) => {
       });
     }
 
-    // Create admin user
+    // Create admin user - always full access
     const admin = await User.create({
       name,
       email,
@@ -39,6 +39,7 @@ const registerAdmin = async (req, res) => {
       department,
       role: 'admin',
       status: 'active',
+      confidentialityLevels: ['public', 'internal', 'confidential', 'highly_confidential'],
       confidentialityLevel: 'highly_confidential'
     });
 

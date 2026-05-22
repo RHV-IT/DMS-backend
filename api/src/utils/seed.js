@@ -96,6 +96,7 @@ const seedSuperAdmin = async () => {
     role: 'admin',
     department: 'INFORMATION TECHNOLOGY',
     status: 'active',
+    confidentialityLevels: ['public', 'internal', 'confidential', 'highly_confidential'],
     confidentialityLevel: 'highly_confidential',
     passwordLastChanged: new Date()
   });
