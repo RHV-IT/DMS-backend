@@ -35,23 +35,44 @@ function getUserLevel(user) {
 }
 
 /**
- * canViewFile(user, file) - STRICT per task spec
- * - Admin: all
- * - Non-admin: own dept ONLY
- * - Conf matrix: user level allows <= files
- * - HIGHLY_CONFIDENTIAL: ONLY if uploadedBy === currentUserId (strict, no exceptions)
+ * canViewFile(user, file, permissions = []) 
+ * 
+ * Sharing is the ONLY way to view files that violate normal rules:
+ *   - above your confidentiality level, or
+ *   - outside your department
+ * 
+ * Priority:
+ * 1. Admin → always true
+ * 2. Explicitly shared with this user (active non-revoked Permission) → true (bypass dept/level/high rules)
+ * 3. Otherwise: strict dept + matrix + high-conf only uploader
  */
-function canViewFile(user, file) {
+function canViewFile(user, file, permissions = []) {
   if (!user || !file) return false;
 
-  // Admin full bypass
+  // 1. Admin full bypass
   if (user.role === 'admin') {
     return true;
   }
 
-  // Strict department isolation for ALL non-admins (hod/user/etc)
+  // 2. Sharing bypass (the ONLY exception to dept/level/high rules)
+  const fileIdStr = file._id ? file._id.toString() : (file.fileId || '');
+  const userIdStr = user._id ? user._id.toString() : '';
+
+  const isExplicitlyShared = permissions.some(perm => {
+    if (perm.isRevoked) return false;
+    const permFileId = perm.fileId ? perm.fileId.toString() : '';
+    const permUserId = perm.userId ? perm.userId.toString() : '';
+    return permFileId === fileIdStr && permUserId === userIdStr;
+  });
+
+  if (isExplicitlyShared) {
+    return true;
+  }
+
+  // 3. Strict rules (only reached if NOT shared)
   const userDept = (user.department || '').toString().trim().toUpperCase();
   const fileDept = (file.department || '').toString().trim().toUpperCase();
+
   if (userDept !== fileDept || !userDept) {
     return false;
   }
@@ -62,12 +83,11 @@ function canViewFile(user, file) {
   const userRank = CONFIDENTIALITY_LEVELS[userLevel] || 1;
   const fileRank = CONFIDENTIALITY_LEVELS[fileLevel] || 1;
 
-  // Matrix: user can see files at their level or lower
   if (userRank < fileRank) {
     return false;
   }
 
-  // HIGHLY CONFIDENTIAL special rule (overrides matrix): uploader ONLY
+  // HIGHLY CONFIDENTIAL: only uploader (unless shared — already handled above)
   if (fileLevel === 'highly_confidential') {
     const uploaderId = file.uploadedBy
       ? file.uploadedBy.toString()
@@ -142,19 +162,31 @@ function buildFileAccessQuery(user) {
  * Legacy wrappers (updated to delegate to strict canViewFile for security)
  */
 function canUserAccessFile(user, file, sharedPermissions = []) {
-  // ignore sharedPermissions for strict enforcement; high conf is uploader only
-  return canViewFile(user, file);
+  return canViewFile(user, file, sharedPermissions);
 }
 
 function canUserAccessFileContents(user, file, sharedPermissions = []) {
-  return canViewFile(user, file); // same rules for contents per task
+  return canViewFile(user, file, sharedPermissions);
 }
 
 function canUserManageFile(user, file, sharedPermissions = []) {
   if (user && user.role === 'admin') return true;
-  // for manage, stricter: must be able to view + owner or high rank?
-  // task focuses on view/access; for manage keep similar but use view + owner for non-admin
-  if (!canViewFile(user, file)) return false;
+
+  // Sharing also grants manage if they have 'edit' permission
+  const fileIdStr = file._id ? file._id.toString() : '';
+  const userIdStr = user._id ? user._id.toString() : '';
+
+  const hasEditShare = sharedPermissions.some(p =>
+    !p.isRevoked &&
+    (p.fileId ? p.fileId.toString() : '') === fileIdStr &&
+    (p.userId ? p.userId.toString() : '') === userIdStr &&
+    (p.access === 'edit' || p.access === 'download') // treat download/edit as management capable for now
+  );
+
+  if (hasEditShare) return true;
+
+  if (!canViewFile(user, file, sharedPermissions)) return false;
+
   const isOwner = file.owner && user._id && file.owner.toString() === user._id.toString();
   const isUploader = file.uploadedBy && user._id && file.uploadedBy.toString() === user._id.toString();
   return isOwner || isUploader;

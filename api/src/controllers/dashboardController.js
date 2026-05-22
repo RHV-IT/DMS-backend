@@ -64,9 +64,22 @@ const dashboardController = {
       const userRole = user.role;
       const userDepartment = user.department;
 
-      // STRICT query-level enforcement
-      const accessQuery = buildFileAccessQuery(user);
-      const files = await File.find({ ...accessQuery, isDeleted: { $ne: true } })
+      // STRICT + shared files
+      const strictQ = buildFileAccessQuery(user);
+      const myShared = await Permission.find({ userId: user._id, isRevoked: false });
+      const sharedIds = myShared.map(p => p.fileId);
+
+      let q;
+      if (sharedIds.length > 0) {
+        q = {
+          isDeleted: { $ne: true },
+          $or: [ strictQ, { _id: { $in: sharedIds } } ]
+        };
+      } else {
+        q = { ...strictQ, isDeleted: { $ne: true } };
+      }
+
+      const files = await File.find(q)
         .populate('uploadedBy', 'name email department confidentialityLevel')
         .populate('owner', 'name email department')
         .sort({ createdAt: -1 })

@@ -347,7 +347,8 @@ const fileController = {
         return res.status(404).json({ success: false, message: 'File not found' });
       }
 
-      if (!canViewFile(req.user, file)) {
+      const filePermissions = await Permission.find({ fileId: file._id, isRevoked: false });
+      if (!canViewFile(req.user, file, filePermissions)) {
         await AuditLog.create({
           userId: req.user._id,
           userEmail: req.user.email,
@@ -395,9 +396,25 @@ const fileController = {
 
       const user = req.user;
 
-      // STRICT query-level enforcement using helper
-      const accessQuery = buildFileAccessQuery(user);
-      const query = { ...accessQuery };
+      // STRICT base (dept + level)
+      const strictQuery = buildFileAccessQuery(user);
+
+      // Also include files explicitly shared with me (this is the bypass for cross-dept / higher level)
+      const mySharedPerms = await Permission.find({ userId: user._id, isRevoked: false });
+      const sharedFileIds = mySharedPerms.map(p => p.fileId);
+
+      let query;
+      if (sharedFileIds.length > 0) {
+        query = {
+          isDeleted: { $ne: true },
+          $or: [
+            strictQuery,
+            { _id: { $in: sharedFileIds } }
+          ]
+        };
+      } else {
+        query = { ...strictQuery };
+      }
 
       if (type) query.type = type;
       if (confidentiality) query.confidentialityLevel = confidentiality;
@@ -412,23 +429,26 @@ const fileController = {
           { alias: { $regex: search, $options: 'i' } },
           { tags: { $in: new RegExp(search, 'i') } }
         ];
-        if (query.$or) {
-          query.$and = (query.$and || []).concat([ { $or: query.$or }, { $or: searchOr } ]);
-          delete query.$or;
-        } else {
-          query.$or = searchOr;
-        }
+        // wrap existing query in $and with search
+        query = {
+          $and: [ query, { $or: searchOr } ]
+        };
       }
 
       if (owner) {
         if (user.role !== 'admin') {
           return res.status(403).json({ success: false, message: 'Only admin can filter by owner' });
         }
-        query.owner = owner;
+        // when owner filter, restrict to admin only
+        if (query.$or) {
+          query.$and = (query.$and || []).concat([{ owner }]);
+        } else {
+          query.owner = owner;
+        }
       }
       if (department) {
         if (user.role === 'admin') {
-          query.department = department;
+          // admin can further filter
         } else if (department !== user.department) {
           return res.status(403).json({ success: false, message: 'Cannot view other departments' });
         }
@@ -478,17 +498,36 @@ const fileController = {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
-      // STRICT: use DB query builder for archive - task requirement #7
-      const accessQuery = buildFileAccessQuery(user);
-      const query = { ...accessQuery };
+      // STRICT base + shared files (sharing bypasses dept/level)
+      const strictQuery = buildFileAccessQuery(user);
+
+      const mySharedPerms = await Permission.find({ userId: user._id, isRevoked: false });
+      const sharedFileIds = mySharedPerms.map(p => p.fileId);
+
+      let query;
+      if (sharedFileIds.length > 0) {
+        query = {
+          isDeleted: { $ne: true },
+          $or: [
+            strictQuery,
+            { _id: { $in: sharedFileIds } }
+          ]
+        };
+      } else {
+        query = { ...strictQuery };
+      }
 
       if (confidentialityLevel) query.confidentialityLevel = confidentialityLevel;
       if (uploadedBy) {
-        // only allow if admin or the uploader themselves (security)
         if (user.role === 'admin' || uploadedBy.toString() === user._id.toString()) {
-          query.uploadedBy = uploadedBy;
+          // when filtering by uploadedBy, add to the current query structure
+          if (query.$or) {
+            query.$and = (query.$and || []).concat([ { $or: query.$or }, { uploadedBy } ]);
+            delete query.$or;
+          } else {
+            query.uploadedBy = uploadedBy;
+          }
         } else {
-          // non-admin trying to filter by other uploader -> ignore or deny? for safety, restrict to own
           query.uploadedBy = user._id;
         }
       }
@@ -568,7 +607,8 @@ const fileController = {
         return res.status(404).json({ success: false, message: 'File not found' });
       }
 
-      if (!canViewFile(req.user, file)) {
+      const filePermissions = await Permission.find({ fileId: file._id, isRevoked: false });
+      if (!canViewFile(req.user, file, filePermissions)) {
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
 
@@ -805,9 +845,23 @@ deleteFile: async (req, res, next) => {
       const user = req.user;
       const now = new Date();
 
-      // STRICT: start with access query, then add isDeleted
-      const accessQuery = buildFileAccessQuery(user);
-      let query = { ...accessQuery, isDeleted: true };
+      const strictQuery = buildFileAccessQuery(user);
+
+      const mySharedPerms = await Permission.find({ userId: user._id, isRevoked: false });
+      const sharedFileIds = mySharedPerms.map(p => p.fileId);
+
+      let query;
+      if (sharedFileIds.length > 0) {
+        query = {
+          isDeleted: true,
+          $or: [
+            strictQuery,
+            { _id: { $in: sharedFileIds } }
+          ]
+        };
+      } else {
+        query = { ...strictQuery, isDeleted: true };
+      }
 
       if (user.role !== 'admin') {
         query.permanentDeleteAt = { $gt: now };
