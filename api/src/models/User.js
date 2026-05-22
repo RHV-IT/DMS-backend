@@ -39,10 +39,15 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  confidentialityLevels: [{
+  confidentialityLevel: {
     type: String,
     enum: ['public', 'internal', 'confidential', 'highly_confidential'],
-    default: ['public']
+    default: 'public'
+  },
+  // Legacy support - will be removed after migration
+  confidentialityLevels: [{
+    type: String,
+    enum: ['public', 'internal', 'confidential', 'highly_confidential']
   }],
   passwordHistory: [{
     password: String,
@@ -116,6 +121,16 @@ userSchema.methods.addToPasswordHistory = async function () {
   }
   this.passwordHistory = history;
   this.passwordLastChanged = new Date();
+};
+
+userSchema.methods.getConfidentialityLevel = function () {
+  if (this.confidentialityLevel) return this.confidentialityLevel;
+  // fallback for legacy array data: use highest level
+  if (Array.isArray(this.confidentialityLevels) && this.confidentialityLevels.length > 0) {
+    const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+    return this.confidentialityLevels.sort((a, b) => (ranks[b] || 0) - (ranks[a] || 0))[0];
+  }
+  return 'public';
 };
 
 module.exports = mongoose.model('User', userSchema);

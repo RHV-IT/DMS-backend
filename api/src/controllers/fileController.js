@@ -4,7 +4,7 @@ const Permission = require('../models/Permission');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
-const { canUserAccessFile, canUserAccessFileContents, canUserManageFile, filterAccessibleFiles } = require('../utils/accessControl');
+const { canViewFile, canUploadLevel, buildFileAccessQuery, canUserAccessFile, canUserAccessFileContents, canUserManageFile, filterAccessibleFiles } = require('../utils/accessControl');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -26,9 +26,7 @@ const fileController = {
       const { alias, tags, confidentialityLevel } = req.body;
       const user = req.user;
 
-      const userLevels = user.confidentialityLevels || ['public'];
       let fileLevel = confidentialityLevel || 'internal';
-
       // normalize
       const normalized = String(fileLevel).toLowerCase().trim();
       if (normalized.includes('high')) fileLevel = 'highly_confidential';
@@ -36,7 +34,22 @@ const fileController = {
       else if (normalized.includes('int')) fileLevel = 'internal';
       else fileLevel = 'public';
 
-      if (!userLevels.includes(fileLevel)) {
+      if (!canUploadLevel(user, fileLevel)) {
+        // Audit denied upload attempt
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'restricted_access_attempt',
+          resource: 'file',
+          details: {
+            action: 'upload_denied',
+            attemptedLevel: fileLevel,
+            userLevel: user.getConfidentialityLevel ? user.getConfidentialityLevel() : user.confidentialityLevel,
+            department: user.department
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
         return res.status(403).json({
           success: false,
           message: 'Not authorized to create files at this confidentiality level'
@@ -69,6 +82,8 @@ const fileController = {
         owner: user._id,
         uploadedBy: user._id,
         department: user.department,
+        uploadedByDepartment: user.department,
+        uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: fileLevel,
         mimeType: req.file.mimetype || 'application/octet-stream',
@@ -112,7 +127,6 @@ const fileController = {
       }
 
       const user = req.user;
-      const userLevels = user.confidentialityLevels || ['public'];
 
       // Support per-file metadata[] (JSON strings) mapped by index to files[]
       // Also fallback to single confidentialityLevel for all if no metadata
@@ -144,8 +158,17 @@ const fileController = {
         else if (normalized.includes('int')) fileLevel = 'internal';
         else fileLevel = 'public';
 
-        if (!userLevels.includes(fileLevel)) {
+        if (!canUploadLevel(user, fileLevel)) {
           errors.push(`File ${file.originalname}: confidentiality level ${fileLevel} not allowed for user`);
+          // Audit each denied in bulk
+          await AuditLog.create({
+            userId: user._id,
+            userEmail: user.email,
+            action: 'restricted_access_attempt',
+            resource: 'file',
+            details: { action: 'bulk_upload_denied', fileName: file.originalname, attemptedLevel: fileLevel },
+            ipAddress: req.ip
+          });
           continue;
         }
 
@@ -182,6 +205,8 @@ const fileController = {
           owner: user._id,
           uploadedBy: user._id,
           department: user.department,
+          uploadedByDepartment: user.department,
+          uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
           confidentialityLevel: fileLevel,
           mimeType: file.mimetype || 'application/octet-stream',
           storagePath: storageLocation
@@ -236,35 +261,23 @@ const fileController = {
       const canAccessContents = canUserAccessFileContents(req.user, file, filePermissions);
 
       if (!canAccessContents) {
-        // Special handling for HOD trying to access highly confidential file
-        if (req.user.role === 'hod' && file.confidentialityLevel === 'highly_confidential') {
-          // Log restricted access attempt
-          await AuditLog.create({
-            userId: req.user._id,
-            userEmail: req.user.email,
-            action: 'restricted_access_attempt',
-            resource: 'file',
-            resourceId: file.fileId,
-            details: {
-              action: 'download',
-              fileName: file.name,
-              confidentialityLevel: file.confidentialityLevel,
-              restrictionReason: 'HOD attempted to download highly confidential file'
-            },
-            ipAddress: req.ip,
-            userAgent: req.get('user-agent'),
-            ...req.auditEnhancement
-          });
-
-          return res.status(403).json({
-            success: false,
-            message: 'Access restricted. Highly confidential file download not available to department heads.',
-            restricted: true,
-            restrictionReason: 'Highly confidential file. Download restricted for department heads.'
-          });
-        }
-
-        return res.status(403).json({ success: false, message: 'No access to file contents' });
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'restricted_access_attempt',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: {
+            action: 'download_denied',
+            fileName: file.name,
+            fileLevel: file.confidentialityLevel,
+            userDept: req.user.department,
+            userLevel: req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+        return res.status(403).json({ success: false, message: 'Access denied' });
       }
 
       const storageLocation = file.storagePath;
@@ -334,14 +347,31 @@ const fileController = {
         return res.status(404).json({ success: false, message: 'File not found' });
       }
 
-      const hasPermission = await fileController.checkAccess(file, req.user, 'view');
-      if (!hasPermission && file.owner.toString() !== req.user._id.toString()) {
-        if (req.user.role !== 'admin' && req.user.role !== 'hod') {
-          return res.status(403).json({ success: false, message: 'No view permission' });
-        }
+      if (!canViewFile(req.user, file)) {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'restricted_access_attempt',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: {
+            action: 'getFile_denied',
+            fileName: file.name,
+            fileLevel: file.confidentialityLevel,
+            userDept: req.user.department,
+            userLevel: req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel
+          },
+          ipAddress: req.ip
+        });
+        return res.status(403).json({ success: false, message: 'Access denied' });
       }
 
-      res.json({ success: true, data: file });
+      // populate uploader info so user sees who uploaded
+      const populated = await File.findOne({ fileId: req.params.fileId })
+        .populate('uploadedBy', 'name email department confidentialityLevel')
+        .populate('owner', 'name email department');
+
+      res.json({ success: true, data: populated || file });
     } catch (error) {
       next(error);
     }
@@ -365,110 +395,52 @@ const fileController = {
 
       const user = req.user;
 
-      // Build base filters (excluding owner restrictions)
-      const baseFilter = { isDeleted: false };
-      
-      if (type) baseFilter.type = type;
-      if (confidentiality) baseFilter.confidentialityLevel = confidentiality;
-      if (owner) {
-        if (user.role !== 'admin') {
-          return res.status(403).json({ success: false, message: 'Only admin can filter by owner' });
-        }
-        baseFilter.owner = owner;
-      }
-      
-      if (fromDate || toDate) {
-        baseFilter.createdAt = {};
-        if (fromDate) baseFilter.createdAt.$gte = new Date(fromDate);
-        if (toDate) baseFilter.createdAt.$lte = new Date(toDate);
-      }
+      // STRICT query-level enforcement using helper
+      const accessQuery = buildFileAccessQuery(user);
+      const query = { ...accessQuery };
 
+      if (type) query.type = type;
+      if (confidentiality) query.confidentialityLevel = confidentiality;
+      if (fromDate || toDate) {
+        query.createdAt = query.createdAt || {};
+        if (fromDate) query.createdAt.$gte = new Date(fromDate);
+        if (toDate) query.createdAt.$lte = new Date(toDate);
+      }
       if (search) {
-        baseFilter.$or = [
+        const searchOr = [
           { name: { $regex: search, $options: 'i' } },
           { alias: { $regex: search, $options: 'i' } },
           { tags: { $in: new RegExp(search, 'i') } }
         ];
-      }
-
-      // Department restrictions
-      if (user.role === 'admin') {
-        if (department) baseFilter.department = department;
-      } else if (user.role === 'hod') {
-        baseFilter.department = user.department;
-        if (department && department !== user.department) {
-          return res.status(403).json({ success: false, message: 'Cannot view other departments' });
-        }
-      } else {
-        if (department && department !== user.department) {
-          return res.status(403).json({ success: false, message: 'Cannot view other departments' });
-        }
-        // For regular users, restrict to their department
-        baseFilter.department = user.department;
-      }
-
-      let files;
-      let total;
-
-      if (user.role === 'admin' || user.role === 'hod') {
-        files = await File.find(baseFilter)
-          .populate('owner', 'name email')
-          .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
-          .skip((page - 1) * limit)
-          .limit(limit);
-        total = await File.countDocuments(baseFilter);
-      } else {
-        // Regular user: combine owned and shared files, with confidentiality level filtering
-        const sharedPermissions = await Permission.find({
-          userId: user._id,
-          isRevoked: false,
-          access: { $in: ['view', 'download', 'edit'] }
-        });
-        const sharedFileIds = sharedPermissions.map(p => p.fileId);
-
-        const userLevels = user.confidentialityLevels || ['public'];
-
-        // Separate search $or from other filters
-        const searchOrClauses = baseFilter.$or || [];
-        const { $or: _, ...staticFilters } = baseFilter; // remove $or from static filters
-
-        // Add confidentiality level filter - user can only see files at levels they have access to
-        staticFilters.confidentialityLevel = { $in: userLevels };
-
-        // Build final query
-        let finalQuery;
-        if (searchOrClauses.length > 0) {
-          // Need both search and ownership: combine via $and
-          finalQuery = {
-            ...staticFilters,
-            $and: [
-              { $or: searchOrClauses },
-              {
-                $or: [
-                  { owner: user._id }, // Own files, including highly_confidential
-                  { _id: { $in: sharedFileIds } } // Shared files
-                ]
-              }
-            ]
-          };
+        if (query.$or) {
+          query.$and = (query.$and || []).concat([ { $or: query.$or }, { $or: searchOr } ]);
+          delete query.$or;
         } else {
-          // Only ownership condition needed
-          finalQuery = {
-            ...staticFilters,
-            $or: [
-              { owner: user._id }, // Own files, including highly_confidential
-              { _id: { $in: sharedFileIds } } // Shared files
-            ]
-          };
+          query.$or = searchOr;
         }
-
-        total = await File.countDocuments(finalQuery);
-        files = await File.find(finalQuery)
-          .populate('owner', 'name email')
-          .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
-          .skip((page - 1) * limit)
-          .limit(limit);
       }
+
+      if (owner) {
+        if (user.role !== 'admin') {
+          return res.status(403).json({ success: false, message: 'Only admin can filter by owner' });
+        }
+        query.owner = owner;
+      }
+      if (department) {
+        if (user.role === 'admin') {
+          query.department = department;
+        } else if (department !== user.department) {
+          return res.status(403).json({ success: false, message: 'Cannot view other departments' });
+        }
+      }
+
+      const files = await File.find(query)
+        .populate('uploadedBy', 'name email department confidentialityLevel')
+        .populate('owner', 'name email department')
+        .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
+      const total = await File.countDocuments(query);
 
       res.json({
         success: true,
@@ -506,125 +478,81 @@ const fileController = {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
-      // Build base filters
-      const baseFilter = {
-        isDeleted: false // Exclude soft deleted files
-        // Note: Archive includes all files (both scanned and uploaded)
-        // Scanned files are included if they have completed the approval process
-      };
+      // STRICT: use DB query builder for archive - task requirement #7
+      const accessQuery = buildFileAccessQuery(user);
+      const query = { ...accessQuery };
 
-      // Add filters
-      if (confidentialityLevel) {
-        baseFilter.confidentialityLevel = confidentialityLevel;
-      }
-
+      if (confidentialityLevel) query.confidentialityLevel = confidentialityLevel;
       if (uploadedBy) {
-        baseFilter.owner = uploadedBy;
+        // only allow if admin or the uploader themselves (security)
+        if (user.role === 'admin' || uploadedBy.toString() === user._id.toString()) {
+          query.uploadedBy = uploadedBy;
+        } else {
+          // non-admin trying to filter by other uploader -> ignore or deny? for safety, restrict to own
+          query.uploadedBy = user._id;
+        }
       }
-
       if (search) {
-        baseFilter.$or = [
+        const searchOr = [
           { name: { $regex: search, $options: 'i' } },
           { alias: { $regex: search, $options: 'i' } },
           { tags: { $in: new RegExp(search, 'i') } }
         ];
+        if (query.$or) {
+          query.$and = (query.$and || []).concat([{ $or: query.$or }, { $or: searchOr }]);
+          delete query.$or;
+        } else {
+          query.$or = searchOr;
+        }
       }
 
-      // Get all files matching basic criteria
-      const allFiles = await File.find(baseFilter)
+      // Query directly - no post-filter ever
+      const allAccessible = await File.find(query)
+        .populate('uploadedBy', 'name email department confidentialityLevel')
         .populate('owner', 'name email department')
         .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 });
 
-      // Ensure populated owner objects have valid values
-      allFiles.forEach(file => {
-        if (file.owner) {
-          file.owner.name = file.owner.name || 'Unknown User';
-          file.owner.email = file.owner.email || 'unknown@example.com';
-          file.owner.department = file.owner.department || 'Unknown';
-        }
-      });
-
-      // Get all permissions for performance
-      const allPermissions = await Permission.find({ isRevoked: false })
-        .populate('userId', 'department confidentialityLevel');
-
-      // Filter files based on confidentiality access rules
-      const accessibleFiles = filterAccessibleFiles(user, allFiles, allPermissions);
-
-      // For HOD users, mark highly confidential files as restricted
-      let processedFiles = accessibleFiles;
-      if (user.role === 'hod') {
-        processedFiles = accessibleFiles.map(file => {
-          if (file.confidentialityLevel === 'highly_confidential') {
-            // Return metadata-only object for HOD
-            return {
-              _id: file._id,
-              fileId: file.fileId || `file_${file._id}`,
-              name: file.name || 'Unnamed File',
-              alias: file.alias || '',
-              type: file.type || 'unknown',
-              size: file.size || 0,
-              department: file.department || 'Unknown',
-              uploadedBy: file.owner,
-              confidentialityLevel: file.confidentialityLevel || 'internal',
-              createdAt: file.createdAt,
-              currentVersion: file.currentVersion || 1,
-              // HOD restriction indicator
-              restricted: true,
-              restrictionReason: "Highly confidential file. Access restricted."
-            };
-          }
-          return file;
-        });
-      }
-
-      // Ensure all files have valid values for frontend select components
-      processedFiles = processedFiles.map(file => ({
-        ...file,
+      // normalize for frontend (no more special hod masking)
+      const processedFiles = allAccessible.map(file => ({
+        ...file.toObject(),
         fileId: file.fileId || `file_${file._id}`,
         name: file.name || 'Unnamed File',
         alias: file.alias || '',
         type: file.type || 'unknown',
         department: file.department || 'Unknown',
-        confidentialityLevel: file.confidentialityLevel || 'internal'
+        confidentialityLevel: file.confidentialityLevel || 'internal',
+        uploadedBy: file.uploadedBy || file.owner
       }));
 
-      // Apply pagination
+      // pagination
       const startIndex = (page - 1) * limit;
       const endIndex = startIndex + parseInt(limit);
       const paginatedFiles = processedFiles.slice(startIndex, endIndex);
 
-      // Audit log archive access
+      // Audit
       await AuditLog.create({
         userId: user._id,
         userEmail: user.email,
         action: 'archive_view',
         resource: 'archive',
-        resourceId: null,
         details: {
-          fileCount: accessibleFiles.length,
+          fileCount: processedFiles.length,
           department: user.department,
-          confidentialityLevel: user.confidentialityLevel,
-          filters: {
-            search,
-            confidentialityLevel,
-            uploadedBy,
-            page: parseInt(page),
-            limit: parseInt(limit)
-          }
+          confidentialityLevel: (user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public')),
+          filters: { search, confidentialityLevel, uploadedBy, page, limit }
         },
         ipAddress: req.ip,
         userAgent: req.get('user-agent'),
-        ...req.auditEnhancement // Include machine, location, scanner data
+        ...req.auditEnhancement
       });
 
       res.json({
         success: true,
         data: {
           files: paginatedFiles,
-          totalPages: Math.ceil(accessibleFiles.length / limit),
+          totalPages: Math.ceil(processedFiles.length / limit),
           currentPage: parseInt(page),
-          total: accessibleFiles.length
+          total: processedFiles.length
         }
       });
     } catch (error) {
@@ -640,7 +568,11 @@ const fileController = {
         return res.status(404).json({ success: false, message: 'File not found' });
       }
 
-      const isOwner = file.owner.toString() === req.user._id.toString();
+      if (!canViewFile(req.user, file)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+
+      const isOwner = file.owner && file.owner.toString() === req.user._id.toString();
       const hasEditPermission = await fileController.checkAccess(file, req.user, 'edit');
 
       if (!isOwner && !hasEditPermission && req.user.role !== 'admin') {
@@ -873,25 +805,20 @@ deleteFile: async (req, res, next) => {
       const user = req.user;
       const now = new Date();
 
-      // Base query: only deleted files
-      let query = { isDeleted: true };
+      // STRICT: start with access query, then add isDeleted
+      const accessQuery = buildFileAccessQuery(user);
+      let query = { ...accessQuery, isDeleted: true };
 
-      // Non-admin users can only see files within the 30-day recovery window
-      // (permanentDeleteAt > now), and only their own or department files
       if (user.role !== 'admin') {
-        query.$or = [
-          { owner: user._id },
-          { department: user.department }
-        ];
         query.permanentDeleteAt = { $gt: now };
       }
 
-      // Admin can see all deleted files (including expired) when showAll=true
       if (showAll === 'true' && user.role === 'admin') {
         delete query.permanentDeleteAt;
       }
 
       const files = await File.find(query)
+        .populate('uploadedBy', 'name email department confidentialityLevel')
         .populate('owner', 'name email')
         .populate('deletedBy', 'name email')
         .limit(limit * 1)
@@ -1014,7 +941,6 @@ deleteFile: async (req, res, next) => {
       const { alias, tags, confidentialityLevel, uploadSource } = req.body;
       const user = req.user;
 
-      const allowedLevels = user.confidentialityLevels || [];
       let fileLevel = confidentialityLevel || 'internal';
 
       const normalized = String(fileLevel).toLowerCase().trim();
@@ -1023,7 +949,12 @@ deleteFile: async (req, res, next) => {
       else if (normalized.includes('int')) fileLevel = 'internal';
       else fileLevel = 'public';
       
-      if (!allowedLevels.includes(fileLevel)) {
+      if (!canUploadLevel(user, fileLevel)) {
+        await AuditLog.create({
+          userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
+          resource: 'file', details: { action: 'scanned_upload_denied', attemptedLevel: fileLevel },
+          ipAddress: req.ip
+        });
         return res.status(403).json({ 
           success: false, 
           message: 'Not authorized to create files at this confidentiality level' 
@@ -1061,6 +992,8 @@ deleteFile: async (req, res, next) => {
         owner: user._id,
         uploadedBy: user._id,
         department: user.department,
+        uploadedByDepartment: user.department,
+        uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: fileLevel,
         mimeType: req.file.mimetype || 'application/octet-stream',
@@ -1109,6 +1042,7 @@ deleteFile: async (req, res, next) => {
       const user = req.user;
       const source = uploadSource || 'scanner';
       const files = [];
+      const errors = [];
 
       for (let i = 0; i < req.files.length; i++) {
         const file = req.files[i];
@@ -1133,6 +1067,13 @@ deleteFile: async (req, res, next) => {
           console.warn('[SCANNED BULK] Blob fallback:', e.message);
         }
 
+        const fileLevel = 'internal';
+        if (!canUploadLevel(user, fileLevel)) {
+          errors.push(`File ${file.originalname}: internal level not allowed`);
+          await AuditLog.create({ userId: user._id, userEmail: user.email, action: 'restricted_access_attempt', resource: 'file', details: {action:'scanned_bulk_denied', fileName: file.originalname}, ipAddress: req.ip });
+          continue;
+        }
+
         const newFile = await File.create({
           name: file.originalname,
           originalFileName: file.originalname,
@@ -1142,7 +1083,9 @@ deleteFile: async (req, res, next) => {
           owner: user._id,
           uploadedBy: user._id,
           department: user.department,
-          confidentialityLevel: 'internal',
+          uploadedByDepartment: user.department,
+          uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
+          confidentialityLevel: fileLevel,
           mimeType: file.mimetype || 'application/octet-stream',
           isScanned: isScannedDoc,
           uploadSource: source,
@@ -1209,35 +1152,23 @@ deleteFile: async (req, res, next) => {
       console.log('[PREVIEW] User role:', req.user.role);
 
       if (!canAccessContents) {
-        // Special handling for HOD trying to access highly confidential file
-        if (req.user.role === 'hod' && file.confidentialityLevel === 'highly_confidential') {
-          // Log restricted access attempt
-          await AuditLog.create({
-            userId: req.user._id,
-            userEmail: req.user.email,
-            action: 'restricted_access_attempt',
-            resource: 'file',
-            resourceId: file.fileId,
-            details: {
-              action: 'preview',
-              fileName: file.name,
-              confidentialityLevel: file.confidentialityLevel,
-              restrictionReason: 'HOD attempted to preview highly confidential file'
-            },
-            ipAddress: req.ip,
-            userAgent: req.get('user-agent'),
-            ...req.auditEnhancement
-          });
-
-          return res.status(403).json({
-            success: false,
-            message: 'Access restricted. Highly confidential file content not available to department heads.',
-            restricted: true,
-            restrictionReason: 'Highly confidential file. Content access restricted for department heads.'
-          });
-        }
-
-        return res.status(403).json({ success: false, message: 'No access to file contents' });
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'restricted_access_attempt',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: {
+            action: 'preview_denied',
+            fileName: file.name,
+            fileLevel: file.confidentialityLevel,
+            userDept: req.user.department,
+            userLevel: req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+        return res.status(403).json({ success: false, message: 'Access denied' });
       }
 
       // Support both local disk (dev) and Vercel Blob / remote URLs (production) - NEVER use local paths for cloud files
@@ -1325,37 +1256,25 @@ deleteFile: async (req, res, next) => {
        // Check if user can access file contents (Google Docs preview)
        const canAccessContents = canUserAccessFileContents(req.user, file, filePermissions);
 
-       if (!canAccessContents) {
-         // Special handling for HOD trying to access highly confidential file
-         if (req.user.role === 'hod' && file.confidentialityLevel === 'highly_confidential') {
-           // Log restricted access attempt
-           await AuditLog.create({
-             userId: req.user._id,
-             userEmail: req.user.email,
-             action: 'restricted_access_attempt',
-             resource: 'file',
-             resourceId: file.fileId,
-             details: {
-               action: 'google_preview',
-               fileName: file.name,
-               confidentialityLevel: file.confidentialityLevel,
-               restrictionReason: 'HOD attempted to Google preview highly confidential file'
-             },
-             ipAddress: req.ip,
-             userAgent: req.get('user-agent'),
-             ...req.auditEnhancement
-           });
-
-           return res.status(403).json({
-             success: false,
-             message: 'Access restricted. Highly confidential file Google preview not available to department heads.',
-             restricted: true,
-             restrictionReason: 'Highly confidential file. Google preview restricted for department heads.'
-           });
-         }
-
-         return res.status(403).json({ success: false, message: 'No access to file contents' });
-       }
+        if (!canAccessContents) {
+          await AuditLog.create({
+            userId: req.user._id,
+            userEmail: req.user.email,
+            action: 'restricted_access_attempt',
+            resource: 'file',
+            resourceId: file.fileId,
+            details: {
+              action: 'google_preview_denied',
+              fileName: file.name,
+              fileLevel: file.confidentialityLevel,
+              userDept: req.user.department,
+              userLevel: req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel
+            },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          });
+          return res.status(403).json({ success: false, message: 'Access denied' });
+        }
 
       // Construct the file URL that Google Docs can access
       const protocol = req.protocol;

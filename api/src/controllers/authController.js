@@ -39,7 +39,7 @@ const authController = {
         password,
         department,
         role: "user",
-        confidentialityLevels: ["public", "internal"],
+        confidentialityLevel: "internal",
         passwordLastChanged: new Date(),
       });
 

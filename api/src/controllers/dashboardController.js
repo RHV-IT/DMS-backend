@@ -2,6 +2,7 @@ const File = require('../models/File');
 const Permission = require('../models/Permission');
 const AuditLog = require('../models/AuditLog');
 const User = require('../models/User');
+const { buildFileAccessQuery } = require('../utils/accessControl');
 
 const dashboardController = {
   getStats: async (req, res, next) => {
@@ -16,41 +17,17 @@ const dashboardController = {
       let pendingShares;
       let sentShares;
 
-      if (userRole === 'admin') {
-        totalFiles = await File.countDocuments({ isDeleted: { $ne: true } });
-        recentUploads = await File.countDocuments({
-          isDeleted: { $ne: true },
-          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-        });
-        pendingShares = await Permission.countDocuments({ isRevoked: false });
-      } else if (userRole === 'hod') {
-        totalFiles = await File.countDocuments({
-          department: userDepartment,
-          isDeleted: { $ne: true }
-        });
-        recentUploads = await File.countDocuments({
-          department: userDepartment,
-          isDeleted: { $ne: true },
-          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-        });
-        pendingShares = await Permission.countDocuments({
-          isRevoked: false
-        });
-      } else {
-        totalFiles = await File.countDocuments({
-          owner: userId,
-          isDeleted: { $ne: true }
-        });
-        recentUploads = await File.countDocuments({
-          owner: userId,
-          isDeleted: { $ne: true },
-          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-        });
-        pendingShares = await Permission.countDocuments({
-          userId: userId,
-          isRevoked: false
-        });
-      }
+      const accessQ = buildFileAccessQuery(user);
+      const baseCountQ = { ...accessQ, isDeleted: { $ne: true } };
+      totalFiles = await File.countDocuments(baseCountQ);
+      recentUploads = await File.countDocuments({
+        ...baseCountQ,
+        createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+      });
+      // pending shares still permission based for now
+      pendingShares = userRole === 'admin' 
+        ? await Permission.countDocuments({ isRevoked: false })
+        : await Permission.countDocuments({ isRevoked: false, userId });
 
       sentShares = await Permission.countDocuments({
         grantedBy: userId,
@@ -87,39 +64,13 @@ const dashboardController = {
       const userRole = user.role;
       const userDepartment = user.department;
 
-      let files;
-      if (userRole === 'admin') {
-        files = await File.find({ isDeleted: { $ne: true } })
-          .populate('owner', 'name email')
-          .sort({ createdAt: -1 })
-          .limit(10);
-      } else if (userRole === 'hod') {
-        files = await File.find({
-          department: userDepartment,
-          isDeleted: { $ne: true }
-        })
-          .populate('owner', 'name email')
-          .sort({ createdAt: -1 })
-          .limit(10);
-      } else {
-        const sharedFiles = await Permission.find({
-          userId: userId,
-          isRevoked: false,
-          access: { $in: ['view', 'download', 'edit'] }
-        });
-        const sharedFileIds = sharedFiles.map(p => p.fileId);
-
-        files = await File.find({
-          isDeleted: false,
-          $or: [
-            { owner: userId },
-            { _id: { $in: sharedFileIds } }
-          ]
-        })
-          .populate('owner', 'name email')
-          .sort({ createdAt: -1 })
-          .limit(10);
-      }
+      // STRICT query-level enforcement
+      const accessQuery = buildFileAccessQuery(user);
+      const files = await File.find({ ...accessQuery, isDeleted: { $ne: true } })
+        .populate('uploadedBy', 'name email department confidentialityLevel')
+        .populate('owner', 'name email department')
+        .sort({ createdAt: -1 })
+        .limit(10);
 
       const recentFiles = files.map(file => ({
         fileId: file.fileId,

@@ -2,6 +2,7 @@ const File = require('../models/File');
 const AuditLog = require('../models/AuditLog');
 const path = require('path');
 const fs = require('fs');
+const { canUploadLevel } = require('../utils/accessControl');
 
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 
@@ -136,40 +137,58 @@ const scannerController = {
          machineId: machineId || 'unknown'
        });
 
-      const fileType = path.extname(req.file.originalname).toLowerCase().replace('.', '');
-      const isScannedDoc = ['pdf', 'jpg', 'jpeg', 'png', 'tiff', 'bmp'].includes(fileType);
+       const fileType = path.extname(req.file.originalname).toLowerCase().replace('.', '');
+       const isScannedDoc = ['pdf', 'jpg', 'jpeg', 'png', 'tiff', 'bmp'].includes(fileType);
 
-       // Ensure blob storage, no local windows paths
-       let storageLocation = req.file.filename;
-       try {
-         const { put } = require('@vercel/blob');
-         const localP = req.file.path || req.file.filename;
-         const buf = fs.readFileSync(localP);
-         const safe = req.file.originalname.replace(/[^a-z0-9.-]/gi, '_');
-         const blob = await put(`files/scanner-direct/${Date.now()}-${safe}`, buf, {
-           access: 'public',
-           contentType: req.file.mimetype || 'application/octet-stream'
-         });
-         storageLocation = blob.url;
-         try { fs.unlinkSync(localP); } catch {}
-       } catch (e) { console.warn('scanner direct blob fail:', e.message); }
+        let fileLevel = confidentialityLevel || 'internal';
+        const norm = String(fileLevel).toLowerCase().trim();
+        if (norm.includes('high')) fileLevel = 'highly_confidential';
+        else if (norm.includes('conf')) fileLevel = 'confidential';
+        else if (norm.includes('int')) fileLevel = 'internal';
+        else fileLevel = 'public';
 
-       const file = await File.create({
-         name: req.file.originalname,
-         originalFileName: req.file.originalname,
-         alias: alias || req.file.originalname,
-         type: fileType,
-         size: req.file.size,
-         owner: user?._id || null,
-         uploadedBy: user?._id || null,
-         department: department || user?.department || 'unknown',
-         tags: tags ? tags.split(',').map(t => t.trim()) : [],
-         confidentialityLevel: confidentialityLevel || 'internal',
-         mimeType: req.file.mimetype || 'application/octet-stream',
-         isScanned: isScannedDoc,
-         uploadSource: 'scanner',
-         storagePath: storageLocation
-       });
+        if (user && !canUploadLevel(user, fileLevel)) {
+          await AuditLog.create({
+            userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
+            resource: 'file', details: { action: 'scanner_upload_denied', attemptedLevel: fileLevel },
+            ipAddress: req.ip
+          });
+          return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+
+        // Ensure blob storage, no local windows paths
+        let storageLocation = req.file.filename;
+        try {
+          const { put } = require('@vercel/blob');
+          const localP = req.file.path || req.file.filename;
+          const buf = fs.readFileSync(localP);
+          const safe = req.file.originalname.replace(/[^a-z0-9.-]/gi, '_');
+          const blob = await put(`files/scanner-direct/${Date.now()}-${safe}`, buf, {
+            access: 'public',
+            contentType: req.file.mimetype || 'application/octet-stream'
+          });
+          storageLocation = blob.url;
+          try { fs.unlinkSync(localP); } catch {}
+        } catch (e) { console.warn('scanner direct blob fail:', e.message); }
+
+        const file = await File.create({
+          name: req.file.originalname,
+          originalFileName: req.file.originalname,
+          alias: alias || req.file.originalname,
+          type: fileType,
+          size: req.file.size,
+          owner: user?._id || null,
+          uploadedBy: user?._id || null,
+          department: department || user?.department || 'unknown',
+          uploadedByDepartment: user?.department || department || 'unknown',
+          uploadedByConfidentiality: user ? (user.getConfidentialityLevel ? user.getConfidentialityLevel() : user.confidentialityLevel) : null,
+          tags: tags ? tags.split(',').map(t => t.trim()) : [],
+          confidentialityLevel: fileLevel,
+          mimeType: req.file.mimetype || 'application/octet-stream',
+          isScanned: isScannedDoc,
+          uploadSource: 'scanner',
+          storagePath: storageLocation
+        });
 
 
       if (user) {
@@ -231,6 +250,22 @@ const scannerController = {
         try { fs.unlinkSync(localP); } catch {}
       } catch (e) { console.warn('scanner simple blob fail:', e.message); }
 
+      let fileLevel = req.body.confidentialityLevel || 'internal';
+      const norm = String(fileLevel).toLowerCase().trim();
+      if (norm.includes('high')) fileLevel = 'highly_confidential';
+      else if (norm.includes('conf')) fileLevel = 'confidential';
+      else if (norm.includes('int')) fileLevel = 'internal';
+      else fileLevel = 'public';
+
+      if (req.user && !canUploadLevel(req.user, fileLevel)) {
+        await AuditLog.create({
+          userId: req.user._id, userEmail: req.user.email, action: 'restricted_access_attempt',
+          resource: 'file', details: { action: 'scanner_simple_denied', attemptedLevel: fileLevel },
+          ipAddress: req.ip
+        });
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+
       const file = await File.create({
         name: req.file.originalname,
         originalFileName: req.file.originalname,
@@ -240,8 +275,10 @@ const scannerController = {
         owner: req.user?._id || null,
         uploadedBy: req.user?._id || null,
         department: department || req.body.department || 'unknown',
+        uploadedByDepartment: req.user?.department || department || 'unknown',
+        uploadedByConfidentiality: req.user ? (req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel) : null,
         tags: [],
-        confidentialityLevel: req.body.confidentialityLevel || 'internal',
+        confidentialityLevel: fileLevel,
         mimeType: req.file.mimetype || 'application/octet-stream',
         isScanned: ['pdf', 'jpg', 'jpeg', 'png'].includes(fileType),
         uploadSource: 'scanner',

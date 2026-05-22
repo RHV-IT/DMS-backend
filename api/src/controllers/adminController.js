@@ -39,7 +39,7 @@ const registerAdmin = async (req, res) => {
       department,
       role: 'admin',
       status: 'active',
-      confidentialityLevels: ['public', 'internal', 'confidential', 'highly_confidential']
+      confidentialityLevel: 'highly_confidential'
     });
 
     // Ensure admin role exists

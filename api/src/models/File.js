@@ -50,6 +50,15 @@ const fileSchema = new mongoose.Schema({
     enum: ['public', 'internal', 'confidential', 'highly_confidential'],
     default: 'internal'
   },
+  uploadedByDepartment: {
+    type: String,
+    default: null
+  },
+  uploadedByConfidentiality: {
+    type: String,
+    enum: ['public', 'internal', 'confidential', 'highly_confidential'],
+    default: null
+  },
   isScanned: {
     type: Boolean,
     default: false

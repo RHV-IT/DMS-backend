@@ -3,6 +3,7 @@ const FileVersion = require('../models/FileVersion');
 const PendingScan = require('../models/PendingScan');
 const AuditLog = require('../models/AuditLog');
 const Permission = require('../models/Permission');
+const { canUploadLevel } = require('../utils/accessControl');
 const DeviceInfoExtractor = require('../utils/deviceInfo');
 const path = require('path');
 const fs = require('fs');
@@ -445,6 +446,15 @@ const scannerController = {
       }
 
       // Step 3: Create File record (always store blob url or filename in storagePath)
+      if (!canUploadLevel(user, confidentialityLevel)) {
+        await AuditLog.create({
+          userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
+          resource: 'file', details: { action: 'pending_confirm_denied', attemptedLevel: confidentialityLevel },
+          ipAddress: req.ip
+        });
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+
       const file = await File.create({
         name: pendingScan.originalName,
         originalFileName: pendingScan.originalName,
@@ -454,6 +464,8 @@ const scannerController = {
         owner: user._id,
         uploadedBy: user._id,
         department: pendingScan.department,
+        uploadedByDepartment: user.department,
+        uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: confidentialityLevel,
         mimeType: mimeType || 'application/octet-stream',
