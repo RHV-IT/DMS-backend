@@ -33,50 +33,54 @@ router.get('/test-endpoint', (req, res) => {
   res.json({ success: true, message: 'Test endpoint works', timestamp: new Date().toISOString() });
 });
 
+/**
+ * GET /api/v1/scanner/auto-install-download
+ * 
+ * Production-grade global download endpoint.
+ * 
+ * - Reads the latest installer URL from api/config/installer.json
+ * - Performs a 302 redirect to the public Vercel Blob URL
+ * - Never streams files, never touches disk for the EXE on request
+ * - Extremely scalable and cheap (no bandwidth from the backend)
+ */
 router.get('/auto-install-download', async (req, res) => {
+  const configPath = path.join(__dirname, '../../config/installer.json');
+
   try {
-    const installerPath = path.join(__dirname, '../../../scanner-desktop/dist/RHV Scanner Agent Setup 1.0.0.exe');
-
-    console.log('📥 Auto-install-download requested');
-    console.log('Looking for installer at:', installerPath);
-
-    if (!fs.existsSync(installerPath)) {
-      console.log('❌ Installer file not found on disk');
-      return res.status(404).json({
+    if (!fs.existsSync(configPath)) {
+      console.warn('⚠️  No installer config found at:', configPath);
+      return res.status(503).json({
         success: false,
-        message: 'Installer not found. Please build the desktop agent first.'
+        message: 'Installer not yet published. Run: node scripts/publish-installer.js',
+        hint: 'The backend is waiting for the first publish of the Electron installer.'
       });
     }
 
-    const stats = fs.statSync(installerPath);
-    const fileName = path.basename(installerPath);
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
-    console.log('✅ Serving installer:', fileName, 'Size:', stats.size);
+    if (!config.installerUrl) {
+      return res.status(503).json({
+        success: false,
+        message: 'Installer URL not configured yet.'
+      });
+    }
 
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Length', stats.size);
+    console.log('🔗 Redirecting installer download to Blob:', config.installerUrl);
+
+    // Set useful headers before redirect (some clients follow redirects better with these)
     res.setHeader('X-Installer-Version', '1.0.0');
+    res.setHeader('X-Installer-Updated', config.updatedAt || '');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
-    const fileStream = fs.createReadStream(installerPath);
-    fileStream.pipe(res);
+    // Permanent redirect to the public Blob (browser will download the .exe directly)
+    return res.redirect(302, config.installerUrl);
 
-    fileStream.on('end', () => {
-      console.log('✅ Auto-installer download completed');
-    });
-
-    fileStream.on('error', (err) => {
-      console.error('❌ Stream error during download:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ success: false, message: 'Download failed' });
-      }
-    });
   } catch (error) {
-    console.error('❌ Error in auto-install-download:', error);
+    console.error('❌ Error in auto-install-download redirect:', error);
     if (!res.headersSent) {
       res.status(500).json({
         success: false,
-        message: 'Failed to serve installer',
+        message: 'Failed to redirect to installer',
         error: error.message
       });
     }
