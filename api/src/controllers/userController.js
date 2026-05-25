@@ -68,17 +68,23 @@ const userController = {
         return res.status(400).json({ success: false, errors: errors.array() });
       }
 
-      const { name, email, password, department, role, confidentialityLevel } = req.body;
+      const { name, email, password, department, role, confidentialityLevels, confidentialityLevel } = req.body;
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
         return res.status(400).json({ success: false, message: 'Email already registered' });
       }
 
-      const level = confidentialityLevel || 'public';
-      const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
-      const userLevelIndex = levelOrder.indexOf(level);
-      const userLevelsArray = levelOrder.slice(0, userLevelIndex + 1);
+      // Prefer array from frontend (no overwrite), fallback compute prefix from singular (legacy)
+      let userLevelsArray;
+      if (Array.isArray(confidentialityLevels) && confidentialityLevels.length > 0) {
+        userLevelsArray = confidentialityLevels;
+      } else {
+        const level = confidentialityLevel || 'public';
+        const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
+        const idx = levelOrder.indexOf(level);
+        userLevelsArray = levelOrder.slice(0, idx + 1);
+      }
 
       const user = await User.create({
         name,
@@ -87,7 +93,7 @@ const userController = {
         department,
         role: role || 'user',
         confidentialityLevels: userLevelsArray,
-        confidentialityLevel: level,
+        // NEVER set singular - array is sole source for permissions
         passwordLastChanged: new Date()
       });
 
@@ -118,7 +124,7 @@ const userController = {
           email: user.email,
           role: user.role,
           department: user.department,
-          confidentialityLevel: user.confidentialityLevel
+          confidentialityLevels: user.confidentialityLevels
         }
       });
     } catch (error) {
@@ -128,25 +134,28 @@ const userController = {
 
   updateUser: async (req, res, next) => {
     try {
-      const { name, email, department, role, status, confidentialityLevel } = req.body;
+      const { name, email, department, role, status, confidentialityLevels, confidentialityLevel } = req.body;
 
       const user = await User.findById(req.params.id);
       if (!user) {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
 
-      const oldData = { role: user.role, status: user.status, confidentialityLevel: user.confidentialityLevel };
+      const oldData = { role: user.role, status: user.status, confidentialityLevels: user.confidentialityLevels };
 
       if (name) user.name = name;
       if (email) user.email = email;
       if (department) user.department = department;
       if (role) user.role = role;
       if (status) user.status = status;
-      if (confidentialityLevel) {
+      if (confidentialityLevels) {
+        // accept array directly from frontend - no singular overwrite ever
+        user.confidentialityLevels = confidentialityLevels;
+      } else if (confidentialityLevel) {
         const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
         const idx = levelOrder.indexOf(confidentialityLevel);
         user.confidentialityLevels = levelOrder.slice(0, idx + 1);
-        user.confidentialityLevel = confidentialityLevel;
+        // DO NOT set user.confidentialityLevel
       }
       user.updatedAt = new Date();
 
@@ -158,7 +167,7 @@ const userController = {
         action: 'user_update',
         resource: 'user',
         resourceId: user._id.toString(),
-        details: { oldData, newData: { role, status, confidentialityLevel } },
+        details: { oldData, newData: { role, status, confidentialityLevels, confidentialityLevel } },
         ipAddress: req.ip
       });
 

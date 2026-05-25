@@ -44,7 +44,7 @@ const fileController = {
           details: {
             action: 'upload_denied',
             attemptedLevel: fileLevel,
-            userLevel: user.getConfidentialityLevel ? user.getConfidentialityLevel() : user.confidentialityLevel,
+            userLevel: user.getConfidentialityLevel(),
             department: user.department
           },
           ipAddress: req.ip,
@@ -52,7 +52,7 @@ const fileController = {
         });
         return res.status(403).json({
           success: false,
-          message: 'Not authorized to create files at this confidentiality level'
+          message: 'You are not authorized to upload files with this confidentiality level.'
         });
       }
 
@@ -83,7 +83,7 @@ const fileController = {
         uploadedBy: user._id,
         department: user.department,
         uploadedByDepartment: user.department,
-        uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
+        uploadedByConfidentiality: user.getConfidentialityLevel(),
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: fileLevel,
         mimeType: req.file.mimetype || 'application/octet-stream',
@@ -206,7 +206,7 @@ const fileController = {
           uploadedBy: user._id,
           department: user.department,
           uploadedByDepartment: user.department,
-          uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
+          uploadedByConfidentiality: user.getConfidentialityLevel(),
           confidentialityLevel: fileLevel,
           mimeType: file.mimetype || 'application/octet-stream',
           storagePath: storageLocation
@@ -272,7 +272,7 @@ const fileController = {
             fileName: file.name,
             fileLevel: file.confidentialityLevel,
             userDept: req.user.department,
-            userLevel: req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel
+            userLevel: req.user.getConfidentialityLevel()
           },
           ipAddress: req.ip,
           userAgent: req.get('user-agent')
@@ -360,7 +360,7 @@ const fileController = {
             fileName: file.name,
             fileLevel: file.confidentialityLevel,
             userDept: req.user.department,
-            userLevel: req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel
+            userLevel: req.user.getConfidentialityLevel()
           },
           ipAddress: req.ip
         });
@@ -369,7 +369,7 @@ const fileController = {
 
       // populate uploader info so user sees who uploaded
       const populated = await File.findOne({ fileId: req.params.fileId })
-        .populate('uploadedBy', 'name email department confidentialityLevel')
+        .populate('uploadedBy', 'name email department confidentialityLevels')
         .populate('owner', 'name email department');
 
       res.json({ success: true, data: populated || file });
@@ -455,7 +455,7 @@ const fileController = {
       }
 
       const files = await File.find(query)
-        .populate('uploadedBy', 'name email department confidentialityLevel')
+        .populate('uploadedBy', 'name email department confidentialityLevels')
         .populate('owner', 'name email department')
         .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
         .skip((page - 1) * limit)
@@ -547,7 +547,7 @@ const fileController = {
 
       // Query directly - no post-filter ever
       const allAccessible = await File.find(query)
-        .populate('uploadedBy', 'name email department confidentialityLevel')
+        .populate('uploadedBy', 'name email department confidentialityLevels')
         .populate('owner', 'name email department')
         .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 });
 
@@ -577,7 +577,7 @@ const fileController = {
         details: {
           fileCount: processedFiles.length,
           department: user.department,
-          confidentialityLevel: (user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public')),
+          confidentialityLevel: user.getConfidentialityLevel(),
           filters: { search, confidentialityLevel, uploadedBy, page, limit }
         },
         ipAddress: req.ip,
@@ -653,7 +653,15 @@ const fileController = {
       const { alias, tags, confidentialityLevel } = req.body;
       if (alias) file.alias = alias;
       if (tags) file.tags = tags.split(',').map(t => t.trim());
-      if (confidentialityLevel) file.confidentialityLevel = confidentialityLevel;
+      if (confidentialityLevel) {
+        if (!canUploadLevel(req.user, confidentialityLevel)) {
+          return res.status(403).json({
+            success: false,
+            message: 'You are not authorized to upload files with this confidentiality level.'
+          });
+        }
+        file.confidentialityLevel = confidentialityLevel;
+      }
       
       file.updatedAt = new Date();
       await file.save();
@@ -872,7 +880,7 @@ deleteFile: async (req, res, next) => {
       }
 
       const files = await File.find(query)
-        .populate('uploadedBy', 'name email department confidentialityLevel')
+        .populate('uploadedBy', 'name email department confidentialityLevels')
         .populate('owner', 'name email')
         .populate('deletedBy', 'name email')
         .limit(limit * 1)
@@ -1011,7 +1019,7 @@ deleteFile: async (req, res, next) => {
         });
         return res.status(403).json({ 
           success: false, 
-          message: 'Not authorized to create files at this confidentiality level' 
+          message: 'You are not authorized to upload files with this confidentiality level.' 
         });
       }
 
@@ -1047,7 +1055,7 @@ deleteFile: async (req, res, next) => {
         uploadedBy: user._id,
         department: user.department,
         uploadedByDepartment: user.department,
-        uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
+        uploadedByConfidentiality: user.getConfidentialityLevel(),
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: fileLevel,
         mimeType: req.file.mimetype || 'application/octet-stream',
@@ -1138,7 +1146,7 @@ deleteFile: async (req, res, next) => {
           uploadedBy: user._id,
           department: user.department,
           uploadedByDepartment: user.department,
-          uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
+          uploadedByConfidentiality: user.getConfidentialityLevel(),
           confidentialityLevel: fileLevel,
           mimeType: file.mimetype || 'application/octet-stream',
           isScanned: isScannedDoc,
@@ -1217,7 +1225,7 @@ deleteFile: async (req, res, next) => {
             fileName: file.name,
             fileLevel: file.confidentialityLevel,
             userDept: req.user.department,
-            userLevel: req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel
+            userLevel: req.user.getConfidentialityLevel()
           },
           ipAddress: req.ip,
           userAgent: req.get('user-agent')
@@ -1322,7 +1330,7 @@ deleteFile: async (req, res, next) => {
               fileName: file.name,
               fileLevel: file.confidentialityLevel,
               userDept: req.user.department,
-              userLevel: req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel
+              userLevel: req.user.getConfidentialityLevel()
             },
             ipAddress: req.ip,
             userAgent: req.get('user-agent')

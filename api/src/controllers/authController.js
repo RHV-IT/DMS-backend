@@ -40,7 +40,7 @@ const authController = {
         department,
         role: "user",
         confidentialityLevels: ['public', 'internal'],
-        confidentialityLevel: "internal",
+        // singular deprecated - never set to avoid frontend conflict
         passwordLastChanged: new Date(),
       });
 

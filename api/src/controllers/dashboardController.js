@@ -80,7 +80,7 @@ const dashboardController = {
       }
 
       const files = await File.find(q)
-        .populate('uploadedBy', 'name email department confidentialityLevel')
+        .populate('uploadedBy', 'name email department confidentialityLevels')
         .populate('owner', 'name email department')
         .sort({ createdAt: -1 })
         .limit(10);

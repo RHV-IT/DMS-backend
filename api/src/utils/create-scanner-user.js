@@ -52,7 +52,7 @@ const createScannerAccount = async () => {
         role: 'admin',  // Adjust if you want more restrictive permissions
         department: 'scanner',
         status: 'active',
-        confidentialityLevel: 'internal'
+        confidentialityLevels: ['public', 'internal', 'confidential', 'highly_confidential']
       });
 
       console.log('✓ Scanner account created!');

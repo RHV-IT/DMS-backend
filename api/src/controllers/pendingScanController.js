@@ -452,7 +452,7 @@ const scannerController = {
           resource: 'file', details: { action: 'pending_confirm_denied', attemptedLevel: confidentialityLevel },
           ipAddress: req.ip
         });
-        return res.status(403).json({ success: false, message: 'Access denied' });
+        return res.status(403).json({ success: false, message: 'You are not authorized to upload files with this confidentiality level.' });
       }
 
       const file = await File.create({
@@ -465,7 +465,7 @@ const scannerController = {
         uploadedBy: user._id,
         department: pendingScan.department,
         uploadedByDepartment: user.department,
-        uploadedByConfidentiality: user.getConfidentialityLevel ? user.getConfidentialityLevel() : (user.confidentialityLevel || 'public'),
+        uploadedByConfidentiality: user.getConfidentialityLevel(),
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: confidentialityLevel,
         mimeType: mimeType || 'application/octet-stream',

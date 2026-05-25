@@ -153,7 +153,7 @@ const scannerController = {
             resource: 'file', details: { action: 'scanner_upload_denied', attemptedLevel: fileLevel },
             ipAddress: req.ip
           });
-          return res.status(403).json({ success: false, message: 'Access denied' });
+          return res.status(403).json({ success: false, message: 'You are not authorized to upload files with this confidentiality level.' });
         }
 
         // Ensure blob storage, no local windows paths
@@ -181,7 +181,7 @@ const scannerController = {
           uploadedBy: user?._id || null,
           department: department || user?.department || 'unknown',
           uploadedByDepartment: user?.department || department || 'unknown',
-          uploadedByConfidentiality: user ? (user.getConfidentialityLevel ? user.getConfidentialityLevel() : user.confidentialityLevel) : null,
+          uploadedByConfidentiality: user ? (user.getConfidentialityLevel()) : null,
           tags: tags ? tags.split(',').map(t => t.trim()) : [],
           confidentialityLevel: fileLevel,
           mimeType: req.file.mimetype || 'application/octet-stream',
@@ -263,7 +263,7 @@ const scannerController = {
           resource: 'file', details: { action: 'scanner_simple_denied', attemptedLevel: fileLevel },
           ipAddress: req.ip
         });
-        return res.status(403).json({ success: false, message: 'Access denied' });
+        return res.status(403).json({ success: false, message: 'You are not authorized to upload files with this confidentiality level.' });
       }
 
       const file = await File.create({
@@ -276,7 +276,7 @@ const scannerController = {
         uploadedBy: req.user?._id || null,
         department: department || req.body.department || 'unknown',
         uploadedByDepartment: req.user?.department || department || 'unknown',
-        uploadedByConfidentiality: req.user ? (req.user.getConfidentialityLevel ? req.user.getConfidentialityLevel() : req.user.confidentialityLevel) : null,
+        uploadedByConfidentiality: req.user ? (req.user.getConfidentialityLevel()) : null,
         tags: [],
         confidentialityLevel: fileLevel,
         mimeType: req.file.mimetype || 'application/octet-stream',

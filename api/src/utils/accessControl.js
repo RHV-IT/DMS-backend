@@ -16,16 +16,14 @@ const CONFIDENTIALITY_LEVELS = {
 const LEVEL_ORDER = ['public', 'internal', 'confidential', 'highly_confidential'];
 
 /**
- * Get user's effective confidentiality level (supports new single + legacy array)
+ * Get user's effective (highest) confidentiality level - uses ONLY array
  */
 function getUserLevel(user) {
   if (!user) return 'public';
   if (typeof user.getConfidentialityLevel === 'function') {
     return user.getConfidentialityLevel();
   }
-  if (user.confidentialityLevel) return user.confidentialityLevel;
   if (Array.isArray(user.confidentialityLevels) && user.confidentialityLevels.length > 0) {
-    // pick highest for legacy
     const sorted = [...user.confidentialityLevels].sort((a, b) =>
       (CONFIDENTIALITY_LEVELS[b] || 0) - (CONFIDENTIALITY_LEVELS[a] || 0)
     );
@@ -77,17 +75,15 @@ function canViewFile(user, file, permissions = []) {
     return false;
   }
 
-  const userLevel = getUserLevel(user);
   const fileLevel = file.confidentialityLevel || 'internal';
+  const userLevels = Array.isArray(user.confidentialityLevels) ? user.confidentialityLevels : [];
 
-  const userRank = CONFIDENTIALITY_LEVELS[userLevel] || 1;
-  const fileRank = CONFIDENTIALITY_LEVELS[fileLevel] || 1;
-
-  if (userRank < fileRank) {
+  // ONLY allow if file level is explicitly in user's allowed list (array membership)
+  if (!userLevels.includes(fileLevel)) {
     return false;
   }
 
-  // HIGHLY CONFIDENTIAL: only uploader (unless shared — already handled above)
+  // HIGHLY CONFIDENTIAL: ONLY uploader (even if in list). Shared already handled above.
   if (fileLevel === 'highly_confidential') {
     const uploaderId = file.uploadedBy
       ? file.uploadedBy.toString()
@@ -102,18 +98,15 @@ function canViewFile(user, file, permissions = []) {
 }
 
 /**
- * canUploadLevel(user, level) - per task section 11
+ * canUploadLevel(user, level) - uses ONLY array membership (no singular/rank)
+ * Matches: requestedLevel must be in user.confidentialityLevels
  */
 function canUploadLevel(user, level) {
   if (!user || !level) return false;
   if (user.role === 'admin') return true;
 
-  const userLevel = getUserLevel(user);
-  const userRank = CONFIDENTIALITY_LEVELS[userLevel] || 1;
-  const targetRank = CONFIDENTIALITY_LEVELS[level] || 1;
-
-  // user rank >= target rank means can upload that level or lower
-  return userRank >= targetRank;
+  const userLevels = Array.isArray(user.confidentialityLevels) ? user.confidentialityLevels : [];
+  return userLevels.includes(level);
 }
 
 /**
@@ -134,25 +127,32 @@ function buildFileAccessQuery(user) {
   }
 
   const userDept = user.department;
-  const userLevel = getUserLevel(user);
-  const userRank = CONFIDENTIALITY_LEVELS[userLevel] || 1;
-
-  // levels this user is allowed (by matrix)
-  const allowed = LEVEL_ORDER.filter((l, idx) => (idx + 1) <= userRank);
+  const userLevels = Array.isArray(user.confidentialityLevels) ? user.confidentialityLevels : [];
 
   const query = {
     ...base,
     department: userDept
   };
 
-  if (allowed.includes('highly_confidential')) {
-    // allow lower + high only for self
-    query.$or = [
-      { confidentialityLevel: { $in: allowed.filter(l => l !== 'highly_confidential') } },
-      { confidentialityLevel: 'highly_confidential', uploadedBy: user._id }
-    ];
+  const hasHigh = userLevels.includes('highly_confidential');
+  const nonHighLevels = userLevels.filter(l => l !== 'highly_confidential');
+
+  if (hasHigh) {
+    // lower (from list) + own high files only
+    if (nonHighLevels.length > 0) {
+      query.$or = [
+        { confidentialityLevel: { $in: nonHighLevels } },
+        { confidentialityLevel: 'highly_confidential', uploadedBy: user._id }
+      ];
+    } else {
+      query.confidentialityLevel = 'highly_confidential';
+      query.uploadedBy = user._id;
+    }
+  } else if (userLevels.length > 0) {
+    query.confidentialityLevel = { $in: userLevels };
   } else {
-    query.confidentialityLevel = { $in: allowed };
+    // no access
+    query._id = null;
   }
 
   return query;
