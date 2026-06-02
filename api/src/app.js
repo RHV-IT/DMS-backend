@@ -17,7 +17,7 @@ const { seedDepartments, seedSuperAdmin } = require("./utils/seed");
 const app = express();
 
 /* REMOVED INLINE CORS SETTINGS: 
-  All origins and headers are now managed in ./config/cors.js 
+   All origins and headers are now managed in ./config/cors.js 
 */
 // const allowedOrigins = [ ... ];
 // const corsOptions = { ... };
@@ -25,14 +25,17 @@ const app = express();
 // APPLY THE MIDDLEWARE
 app.use(corsMiddleware);
 
+// Body parsing middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // --- Static Files & Routes ---
+// Serve uploaded files statically
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Your existing API routes should follow here...
+// Example:
 // app.use("/api/v1/auth", authRoutes);
 // app.use("/api/v1/dashboard", dashboardRoutes);
 
@@ -53,6 +56,7 @@ const startServer = async (retryCount = 0) => {
     await connectDB();
     logger.info("Database connected");
 
+    // Seed departments and super admin (ignore errors to allow startup)
     await seedDepartments().catch(() => { });
     await seedSuperAdmin().catch(() => { });
 
@@ -62,12 +66,14 @@ const startServer = async (retryCount = 0) => {
         logger.info(`Server running on port ${PORT}`);
       });
 
+      // Initialize Socket.IO server if needed
       const createSocketIOServer = require("./config/socket");
       const io = createSocketIOServer(server);
     }
   } catch (error) {
     logger.error("Failed to start server:", error.message);
     if (retryCount < maxRetries) {
+      // Retry after 2 seconds
       setTimeout(() => startServer(retryCount + 1), 2000);
     }
   }

@@ -1,11 +1,12 @@
 const cors = require('cors');
 
 // Dynamic CORS configuration for Socket.IO compatibility
+// Define allowed origins for the application
 const ALLOWED_ORIGINS = [
-  "https://rhv-dms.vercel.app",
-  "http://192.168.0.153:3000",
-  "http://docmanager.rhv",
-  "http://localhost:3000"
+  "https://rhv-dms.vercel.app", // Production frontend
+  "http://192.168.0.153:3000", // Local network frontend
+  "http://docmanager.rhv",      // Internal network alias
+  "http://localhost:3000"       // Local development
 ];
 
 const corsOptions = {
@@ -24,13 +25,21 @@ const corsOptions = {
       callback(new Error(`CORS blocked for origin: ${origin}`));
     }
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Origin', 'X-Requested-With', 'Content-Type', 'Accept',
-    'Authorization', 'x-browser', 'x-device', 'x-client-type', 'x-platform'
+  credentials: true, // Enable cookies and Authorization headers in cross-origin requests
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // Allowed HTTP methods
+  allowedHeaders: [ // Allowed request headers
+    'Origin', 
+    'X-Requested-With', 
+    'Content-Type', 
+    'Accept',
+    'Authorization', 
+    'x-browser', 
+    'x-device', 
+    'x-client-type', 
+    'x-platform'
   ],
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200 // Status for successful OPTIONS requests
 };
 
+// Create and export the CORS middleware
 module.exports = cors(corsOptions);

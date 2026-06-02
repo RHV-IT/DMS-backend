@@ -4,6 +4,16 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const auth = require('../middlewares/authMiddleware');
 
+/**
+ * Authentication routes
+ * All routes are prefixed with /api/v1/auth (defined in app.js or server entry point)
+ */
+
+/**
+ * @route POST /api/v1/auth/register
+ * @description Register a new user account
+ * @access Public
+ */
 router.post(
   '/register',
   [
@@ -15,6 +25,11 @@ router.post(
   authController.register
 );
 
+/**
+ * @route POST /api/v1/auth/login
+ * @description Authenticate user and get access and refresh tokens
+ * @access Public
+ */
 router.post(
   '/login',
   [
@@ -24,12 +39,31 @@ router.post(
   authController.login
 );
 
+/**
+ * @route POST /api/v1/auth/refresh
+ * @description Get new access token using refresh token
+ * @access Public
+ */
 router.post('/refresh', authController.refreshToken);
 
+/**
+ * Apply authentication middleware to all routes below this line
+ * Protects routes so that only authenticated users can access them
+ */
 router.use(auth);
 
+/**
+ * @route POST /api/v1/auth/logout
+ * @description Logout current user (invalidate refresh token)
+ * @access Private
+ */
 router.post('/logout', authController.logout);
 
+/**
+ * @route POST /api/v1/auth/change-password
+ * @description Change user's password
+ * @access Private
+ */
 router.post(
   '/change-password',
   [
@@ -39,18 +73,41 @@ router.post(
   authController.changePassword
 );
 
+/**
+ * @route GET /api/v1/auth/profile
+ * @description Get current user's profile
+ * @access Private
+ */
 router.get('/profile', authController.getProfile);
 
+/**
+ * @route GET /api/v1/auth/me
+ * @description Alias for /profile - Get current user's profile
+ * @access Private
+ */
 router.get('/me', authController.getProfile);
 
+/**
+ * @route PUT /api/v1/auth/profile
+ * @description Update current user's profile
+ * @access Private
+ */
 router.put('/profile', authController.updateProfile);
 
-// Track login for scanner agent (optional, graceful handling)
+/**
+ * @route POST /api/v1/auth/track-login
+ * @description Track login for scanner agent (optional, graceful handling)
+ * @access Private
+ */
 router.post('/track-login', (req, res) => {
   res.status(200).json({ success: true, message: 'Login tracked' });
 });
 
-// Token handshake for scanner agent
+/**
+ * @route POST /api/v1/auth/set-token
+ * @description Token handshake for scanner agent
+ * @access Private
+ */
 router.post('/set-token', auth, async (req, res) => {
   try {
     // This endpoint is called by the frontend to send token to local agent
