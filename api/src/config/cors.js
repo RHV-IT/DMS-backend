@@ -10,6 +10,9 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000"       // Local development
 ];
 
+// Create a lowercase version for case-insensitive comparison
+const ALLOWED_ORIGINS_LOWER = ALLOWED_ORIGINS.map(origin => origin.toLowerCase());
+
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps, curl requests, Postman)
@@ -18,8 +21,10 @@ const corsOptions = {
       return;
     }
 
-    // Check if origin is in allowed list
-    if (ALLOWED_ORIGINS.includes(origin)) {
+    const originLower = origin.toLowerCase();
+
+    // Check if origin is in allowed list (case-insensitive)
+    if (ALLOWED_ORIGINS_LOWER.includes(originLower)) {
       callback(null, true);
     } else {
       console.log(`CORS blocked for origin: ${origin}`);
