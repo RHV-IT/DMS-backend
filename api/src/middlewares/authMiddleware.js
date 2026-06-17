@@ -144,15 +144,10 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // ================================================================
-    // Auto-normalize confidentiality data on every login
-    // Admins/HODs always get full access array (singular deprecated, never overwritten)
-    // ================================================================
-    await user.normalizeConfidentiality();
+    // Preserve the role and confidentiality levels assigned by admin.
+    // No automatic confidentiality normalization happens during login.
 
-    // ================================================================
     // Attach user data to request for downstream use
-    // ================================================================
     req.user = user;
     req.token = token;
     req.tokenRememberMe = decoded.rememberMe;

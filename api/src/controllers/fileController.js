@@ -688,7 +688,7 @@ const fileController = {
     }
   },
 
-deleteFile: async (req, res, next) => {
+  deleteFile: async (req, res, next) => {
     try {
       const file = await File.findOne({ fileId: req.params.fileId });
       
@@ -705,34 +705,62 @@ deleteFile: async (req, res, next) => {
       }
 
       if (req.query.permanent === 'true') {
-        // Delete from blob if cloud URL, else local (never fs on url)
-        const storage = file.storagePath;
-        if (storage && (storage.startsWith('http://') || storage.startsWith('https://'))) {
-          try {
-            const { del } = require('@vercel/blob');
-            await del(storage);
-            console.log('[DELETE] Removed blob:', storage);
-          } catch (delErr) {
-            console.error('[DELETE] Blob delete failed (may already gone):', delErr.message);
-          }
-        } else {
-          const localPath = path.join(UPLOAD_PATH, storage);
-          if (fs.existsSync(localPath)) {
-            fs.unlinkSync(localPath);
-          }
+        if (!file.isDeleted && !isAdmin) {
+          return res.status(400).json({ success: false, message: 'Only deleted files can be permanently removed from the recycle bin' });
         }
-        await FileVersion.deleteMany({ fileId: file._id });
-        await Permission.deleteMany({ fileId: file._id });
-        await file.deleteOne();
 
-        await AuditLog.create({
-          userId: req.user._id,
-          userEmail: req.user.email,
-          action: 'delete',
-          resource: 'file',
-          resourceId: file.fileId,
-          details: { fileName: file.name, permanent: true }
-        });
+        if (isAdmin) {
+          const storage = file.storagePath;
+          if (storage && (storage.startsWith('http://') || storage.startsWith('https://'))) {
+            try {
+              const { del } = require('@vercel/blob');
+              await del(storage);
+              console.log('[DELETE] Removed blob:', storage);
+            } catch (delErr) {
+              console.error('[DELETE] Blob delete failed (may already gone):', delErr.message);
+            }
+          } else {
+            const localPath = path.join(UPLOAD_PATH, storage);
+            if (fs.existsSync(localPath)) {
+              fs.unlinkSync(localPath);
+            }
+          }
+          await FileVersion.deleteMany({ fileId: file._id });
+          await Permission.deleteMany({ fileId: file._id });
+          await file.deleteOne();
+
+          await AuditLog.create({
+            userId: req.user._id,
+            userEmail: req.user.email,
+            action: 'permanent_delete',
+            resource: 'file',
+            resourceId: file.fileId,
+            details: { fileName: file.name, permanent: true }
+          });
+        } else {
+          const originalPermanentDeleteAt = file.permanentDeleteAt;
+
+          file.isDeleted = true;
+          file.deletedAt = file.deletedAt || new Date();
+          file.deletedBy = req.user._id;
+          file.permanentDeleteAt = new Date();
+          await file.save();
+
+          await AuditLog.create({
+            userId: req.user._id,
+            userEmail: req.user.email,
+            action: 'permanent_delete',
+            resource: 'file',
+            resourceId: file.fileId,
+            details: {
+              fileName: file.name,
+              permanent: false,
+              adminVisible: true,
+              deletedFromUserRecycleBin: true,
+              originalPermanentDeleteAt
+            }
+          });
+        }
       } else {
         const deleteAfter30Days = new Date();
         deleteAfter30Days.setDate(deleteAfter30Days.getDate() + 30);
@@ -753,7 +781,12 @@ deleteFile: async (req, res, next) => {
         });
       }
 
-      res.json({ success: true, message: 'File deleted successfully' });
+      res.json({
+        success: true,
+        message: req.query.permanent === 'true'
+          ? (req.user.role === 'admin' ? 'File permanently deleted' : 'File removed from your recycle bin')
+          : 'File moved to recycle bin'
+      });
     } catch (error) {
       next(error);
     }
@@ -767,8 +800,15 @@ deleteFile: async (req, res, next) => {
         return res.status(404).json({ success: false, message: 'File not found' });
       }
 
-      // ALL authenticated users can restore any file (recovery from recycle bin)
-      // No ownership or role restrictions - anyone can restore
+      if (!file.isDeleted) {
+        return res.status(400).json({ success: false, message: 'File is not in the recycle bin' });
+      }
+
+      if (req.user.role !== 'admin' && file.permanentDeleteAt && file.permanentDeleteAt <= new Date()) {
+        return res.status(403).json({ success: false, message: 'This file is no longer available in your recycle bin' });
+      }
+
+      // Restore only files that are still visible in the user's recycle bin.
       
       file.isDeleted = false;
       file.deletedAt = null;
@@ -849,34 +889,32 @@ deleteFile: async (req, res, next) => {
 
   getDeletedFiles: async (req, res, next) => {
     try {
-      const { page = 1, limit = 20, showAll } = req.query;
+      const { page = 1, limit = 20 } = req.query;
       const user = req.user;
       const now = new Date();
 
-      const strictQuery = buildFileAccessQuery(user);
-
-      const mySharedPerms = await Permission.find({ userId: user._id, isRevoked: false });
-      const sharedFileIds = mySharedPerms.map(p => p.fileId);
-
-      let query;
-      if (sharedFileIds.length > 0) {
-        query = {
-          isDeleted: true,
-          $or: [
-            strictQuery,
-            { _id: { $in: sharedFileIds } }
-          ]
-        };
-      } else {
-        query = { ...strictQuery, isDeleted: true };
-      }
+      let query = { isDeleted: true };
 
       if (user.role !== 'admin') {
-        query.permanentDeleteAt = { $gt: now };
-      }
+        const strictQuery = buildFileAccessQuery(user);
+        delete strictQuery.isDeleted;
 
-      if (showAll === 'true' && user.role === 'admin') {
-        delete query.permanentDeleteAt;
+        const mySharedPerms = await Permission.find({ userId: user._id, isRevoked: false });
+        const sharedFileIds = mySharedPerms.map(p => p.fileId);
+
+        if (sharedFileIds.length > 0) {
+          query = {
+            isDeleted: true,
+            $or: [
+              strictQuery,
+              { _id: { $in: sharedFileIds } }
+            ]
+          };
+        } else {
+          query = { ...strictQuery, isDeleted: true };
+        }
+
+        query.permanentDeleteAt = { $gt: now };
       }
 
       const files = await File.find(query)
@@ -958,25 +996,9 @@ deleteFile: async (req, res, next) => {
         permanentDeleteAt: { $lte: now }
       });
 
-      for (const file of expiredFiles) {
-        const storage = file.storagePath;
-        if (storage && (storage.startsWith('http://') || storage.startsWith('https://'))) {
-          try {
-            const { del } = require('@vercel/blob');
-            await del(storage);
-          } catch (e) { console.error('clean blob del:', e.message); }
-        } else {
-          const localPath = path.join(UPLOAD_PATH, storage);
-          if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
-        }
-        await FileVersion.deleteMany({ fileId: file._id });
-        await Permission.deleteMany({ fileId: file._id });
-        await file.deleteOne();
-      }
-
       res.json({ 
         success: true, 
-        message: `${expiredFiles.length} files permanently deleted` 
+        message: `${expiredFiles.length} expired recycle-bin files are hidden from non-admin users. Admin must permanently delete files to remove them completely.`
       });
     } catch (error) {
       next(error);

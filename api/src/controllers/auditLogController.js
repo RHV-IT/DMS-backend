@@ -1,4 +1,5 @@
 const AuditLog = require('../models/AuditLog');
+const User = require('../models/User');
 
 const auditLogController = {
   getLogs: async (req, res, next) => {
@@ -15,7 +16,24 @@ const auditLogController = {
 
       const query = {};
 
-      if (userId) query.userId = userId;
+      if (req.user.role === 'hod') {
+        const departmentUserIds = await User.find({ department: req.user.department, status: { $ne: 'deleted' } }).distinct('_id');
+        const departmentUserIdSet = new Set(departmentUserIds.map((id) => id.toString()));
+        query.userId = { $in: departmentUserIds };
+
+        if (userId) {
+          if (!userId.toString().match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ success: false, message: 'Invalid user ID' });
+          }
+          if (!departmentUserIdSet.has(userId.toString())) {
+            return res.status(403).json({ success: false, message: 'HODs can only view logs for users in their department' });
+          }
+          query.userId = userId;
+        }
+      } else if (userId) {
+        query.userId = userId;
+      }
+
       if (action) query.action = action;
       
       if (fromDate || toDate) {

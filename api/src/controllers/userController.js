@@ -3,21 +3,104 @@ const AuditLog = require('../models/AuditLog');
 const { validationResult } = require('express-validator');
 const { sendWelcomeEmail } = require('../services/emailService');
 
+const ALLOWED_ROLES = ['admin', 'hod', 'user'];
+const CONFIDENTIALITY_LEVELS = ['public', 'internal', 'confidential', 'highly_confidential'];
+
+const normalizeRole = (role) => {
+  const normalized = String(role || '').trim().toLowerCase();
+  return ALLOWED_ROLES.includes(normalized) ? normalized : null;
+};
+
+const normalizeConfidentialityValue = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (CONFIDENTIALITY_LEVELS.includes(normalized)) {
+    return normalized;
+  }
+
+  if (normalized.includes('high')) {
+    return 'highly_confidential';
+  }
+
+  if (normalized.includes('conf')) {
+    return 'confidential';
+  }
+
+  if (normalized.includes('int')) {
+    return 'internal';
+  }
+
+  if (normalized === 'public') {
+    return 'public';
+  }
+
+  return null;
+};
+
+const normalizeConfidentialityInput = ({ confidentialityLevels, confidentialityLevel } = {}) => {
+  let levels;
+
+  if (Array.isArray(confidentialityLevels)) {
+    const mappedLevels = confidentialityLevels.map((level) => normalizeConfidentialityValue(level));
+    const invalidLevel = mappedLevels.find((level) => !level);
+
+    if (invalidLevel === null || invalidLevel === undefined) {
+      return { error: 'Invalid confidentiality level provided' };
+    }
+
+    levels = mappedLevels;
+  } else if (confidentialityLevel) {
+    const level = normalizeConfidentialityValue(confidentialityLevel);
+    if (!level) {
+      return { error: `Invalid confidentiality level: ${confidentialityLevel}` };
+    }
+    levels = CONFIDENTIALITY_LEVELS.slice(0, CONFIDENTIALITY_LEVELS.indexOf(level) + 1);
+  } else {
+    levels = ['public'];
+  }
+
+  const uniqueLevels = [...new Set(levels)];
+  const invalidLevel = uniqueLevels.find((level) => !CONFIDENTIALITY_LEVELS.includes(level));
+
+  if (invalidLevel) {
+    return { error: `Invalid confidentiality level: ${invalidLevel}` };
+  }
+
+  return { levels: uniqueLevels };
+};
+
 const userController = {
   getAllUsers: async (req, res, next) => {
     try {
       const { page = 1, limit = 20, role, status, department, search, includeDeleted } = req.query;
-      
+      const isHod = req.user.role === 'hod';
+
       const query = { status: { $ne: 'deleted' } };
-      if (includeDeleted === 'true') {
+      if (isHod) {
+        if (includeDeleted === 'true') {
+          return res.status(403).json({ success: false, message: 'HODs cannot view deleted users' });
+        }
+        query.department = req.user.department;
+      } else if (includeDeleted === 'true') {
         delete query.status;
       }
-      if (role) query.role = role;
+      if (role) {
+        const normalizedRole = normalizeRole(role);
+        if (!normalizedRole) {
+          return res.status(400).json({ success: false, message: 'Invalid role filter' });
+        }
+        query.role = normalizedRole;
+      }
       if (status) {
         delete query.status;
         query.status = status;
       }
-      if (department) query.department = department;
+      if (department) {
+        if (isHod && department !== req.user.department) {
+          return res.status(403).json({ success: false, message: 'HODs can only view users in their department' });
+        }
+        query.department = department;
+      }
       if (search) {
         query.$or = [
           { name: { $regex: search, $options: 'i' } },
@@ -55,6 +138,10 @@ const userController = {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
 
+      if (req.user.role === 'hod' && user.department !== req.user.department) {
+        return res.status(403).json({ success: false, message: 'HODs can only view users in their department' });
+      }
+
       res.json({ success: true, data: user });
     } catch (error) {
       next(error);
@@ -69,21 +156,19 @@ const userController = {
       }
 
       const { name, email, password, department, role, confidentialityLevels, confidentialityLevel } = req.body;
+      const normalizedRole = normalizeRole(role);
+      if (!normalizedRole) {
+        return res.status(400).json({ success: false, message: 'Role is required (admin, hod, or user)' });
+      }
+
+      const normalizedConfidentiality = normalizeConfidentialityInput({ confidentialityLevels, confidentialityLevel });
+      if (normalizedConfidentiality.error) {
+        return res.status(400).json({ success: false, message: normalizedConfidentiality.error });
+      }
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
         return res.status(400).json({ success: false, message: 'Email already registered' });
-      }
-
-      // Prefer array from frontend (no overwrite), fallback compute prefix from singular (legacy)
-      let userLevelsArray;
-      if (Array.isArray(confidentialityLevels) && confidentialityLevels.length > 0) {
-        userLevelsArray = confidentialityLevels;
-      } else {
-        const level = confidentialityLevel || 'public';
-        const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
-        const idx = levelOrder.indexOf(level);
-        userLevelsArray = levelOrder.slice(0, idx + 1);
       }
 
       const user = await User.create({
@@ -91,9 +176,8 @@ const userController = {
         email,
         password,
         department,
-        role: role || 'user',
-        confidentialityLevels: userLevelsArray,
-        // NEVER set singular - array is sole source for permissions
+        role: normalizedRole,
+        confidentialityLevels: normalizedConfidentiality.levels,
         passwordLastChanged: new Date()
       });
 
@@ -124,7 +208,8 @@ const userController = {
           email: user.email,
           role: user.role,
           department: user.department,
-          confidentialityLevels: user.confidentialityLevels
+          confidentialityLevels: user.confidentialityLevels,
+          confidentialityLevel: user.getConfidentialityLevel()
         }
       });
     } catch (error) {
@@ -135,10 +220,37 @@ const userController = {
   updateUser: async (req, res, next) => {
     try {
       const { name, email, department, role, status, confidentialityLevels, confidentialityLevel } = req.body;
+      const isAdmin = req.user.role === 'admin';
+      const isHod = req.user.role === 'hod';
 
       const user = await User.findById(req.params.id);
       if (!user) {
         return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      if (isHod && user.department !== req.user.department) {
+        return res.status(403).json({ success: false, message: 'HODs can only manage users in their department' });
+      }
+
+      if (isHod) {
+        const restrictedUpdate = [
+          'role',
+          'status',
+          'confidentialityLevels',
+          'confidentialityLevel'
+        ].some((field) => Object.prototype.hasOwnProperty.call(req.body, field));
+
+        if (restrictedUpdate) {
+          return res.status(403).json({
+            success: false,
+            message: 'Only admins can assign user roles or confidentiality levels'
+          });
+        }
+
+        const nextDepartment = department || user.department;
+        if (nextDepartment !== req.user.department) {
+          return res.status(403).json({ success: false, message: 'HODs cannot move users outside their department' });
+        }
       }
 
       const oldData = { role: user.role, status: user.status, confidentialityLevels: user.confidentialityLevels };
@@ -146,17 +258,25 @@ const userController = {
       if (name) user.name = name;
       if (email) user.email = email;
       if (department) user.department = department;
-      if (role) user.role = role;
-      if (status) user.status = status;
-      if (confidentialityLevels) {
-        // accept array directly from frontend - no singular overwrite ever
-        user.confidentialityLevels = confidentialityLevels;
-      } else if (confidentialityLevel) {
-        const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
-        const idx = levelOrder.indexOf(confidentialityLevel);
-        user.confidentialityLevels = levelOrder.slice(0, idx + 1);
-        // DO NOT set user.confidentialityLevel
+
+      if (isAdmin && Object.prototype.hasOwnProperty.call(req.body, 'role')) {
+        const normalizedRole = normalizeRole(role);
+        if (!normalizedRole) {
+          return res.status(400).json({ success: false, message: 'Role is required (admin, hod, or user)' });
+        }
+        user.role = normalizedRole;
       }
+
+      if (isAdmin && status) user.status = status;
+
+      if (isAdmin && (confidentialityLevels || confidentialityLevel)) {
+        const normalizedConfidentiality = normalizeConfidentialityInput({ confidentialityLevels, confidentialityLevel });
+        if (normalizedConfidentiality.error) {
+          return res.status(400).json({ success: false, message: normalizedConfidentiality.error });
+        }
+        user.confidentialityLevels = normalizedConfidentiality.levels;
+      }
+
       user.updatedAt = new Date();
 
       await user.save();

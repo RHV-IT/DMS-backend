@@ -175,34 +175,11 @@ userSchema.methods.getConfidentialityLevel = function () {
 };
 
 /**
- * Normalize confidentiality data for the user.
- * - Ensures admins and HODs always have full access array (all levels)
- * - Ensures regular users have at least 'public' level in the array
- * - Does not modify the deprecated singular confidentialityLevel field
- * @returns {Promise<boolean>} True if data was changed and saved, false otherwise
+ * Preserve assigned confidentiality levels.
+ * Do not auto-change a user's confidentiality because of their role.
  */
 userSchema.methods.normalizeConfidentiality = async function () {
-  const levelOrder = ['public', 'internal', 'confidential', 'highly_confidential'];
-  let changed = false;
-
-  // If admin or hod, force full access array ONLY (no singular overwrite)
-  if (this.role === 'admin' || this.role === 'hod') {
-    if (!Array.isArray(this.confidentialityLevels) || this.confidentialityLevels.length !== levelOrder.length) {
-      this.confidentialityLevels = levelOrder;
-      changed = true;
-    }
-  } else {
-    // For normal users, ensure array exists (do not touch deprecated singular)
-    if (!Array.isArray(this.confidentialityLevels) || this.confidentialityLevels.length === 0) {
-      this.confidentialityLevels = ['public'];
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    await this.save();
-  }
-  return changed;
+  return false;
 };
 
 // Prevent returning deprecated singular field in API responses (avoids mismatch with array)

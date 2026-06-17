@@ -8,7 +8,7 @@ const { roleMiddleware } = require('../middlewares/roleMiddleware');
 router.use(auth);
 
 router.get('/', roleMiddleware('admin', 'hod'), userController.getAllUsers);
-router.get('/:id', userController.getUserById);
+router.get('/:id', roleMiddleware('admin', 'hod'), userController.getUserById);
 
 router.post(
   '/',
@@ -18,7 +18,7 @@ router.post(
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters'),
     body('department').notEmpty().withMessage('Department is required'),
-    body('role').isIn(['admin', 'hod', 'user']).withMessage('Role is required (admin, hod, or user)')
+    body('role').custom((value) => ['admin', 'hod', 'user'].includes(String(value || '').trim().toLowerCase())).withMessage('Role is required (admin, hod, or user)')
   ],
   userController.createUser
 );

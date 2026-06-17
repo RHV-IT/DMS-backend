@@ -209,6 +209,8 @@ class AuthService {
         email: user.email,
         role: user.role,
         department: user.department,
+        confidentialityLevels: user.confidentialityLevels,
+        confidentialityLevel: user.getConfidentialityLevel(),
       },
       requestId,
     };

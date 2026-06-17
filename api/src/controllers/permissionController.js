@@ -27,6 +27,9 @@ const permissionController = {
       if (user.status !== 'active') {
         return res.status(400).json({ success: false, message: 'Cannot share with suspended or deleted users' });
       }
+      if (req.user.role === 'hod' && user.department !== req.user.department) {
+        return res.status(403).json({ success: false, message: 'HODs can only share with users in their department' });
+      }
 
       const existing = await Permission.findOne({
         fileId: file._id,
