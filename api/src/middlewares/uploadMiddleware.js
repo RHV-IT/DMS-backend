@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
+const { FILE_TYPE_GROUPS, FILE_EXTENSION_GROUPS } = require('../constants');
 
 const maxFileSize = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 
@@ -26,40 +27,56 @@ const storage = multer.diskStorage({
 });
 
 const scannedFileMimes = [
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/tiff',
-  'image/bmp'
+  ...FILE_TYPE_GROUPS.pdf,
+  ...FILE_TYPE_GROUPS.image
 ];
+
+const pdfFileMimes = FILE_TYPE_GROUPS.pdf;
 
 const documentFileMimes = [
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'text/plain',
-  'application/zip',
-  'application/x-rar-compressed'
+  ...FILE_TYPE_GROUPS.pdf,
+  ...FILE_TYPE_GROUPS.document,
+  ...FILE_TYPE_GROUPS.spreadsheet,
+  ...FILE_TYPE_GROUPS.presentation
 ];
 
-const imageFileMimes = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/tiff',
-  'image/bmp'
+const imageFileMimes = FILE_TYPE_GROUPS.image;
+
+const zipFileMimes = FILE_TYPE_GROUPS.zip;
+
+const fileCategoryMimes = {
+  image: FILE_TYPE_GROUPS.image,
+  zip: FILE_TYPE_GROUPS.zip,
+  spreadsheet: FILE_TYPE_GROUPS.spreadsheet,
+  presentation: FILE_TYPE_GROUPS.presentation,
+  pdf: FILE_TYPE_GROUPS.pdf,
+  document: FILE_TYPE_GROUPS.document
+};
+
+const allFileMimes = [
+  ...FILE_TYPE_GROUPS.image,
+  ...FILE_TYPE_GROUPS.zip,
+  ...FILE_TYPE_GROUPS.spreadsheet,
+  ...FILE_TYPE_GROUPS.presentation,
+  ...FILE_TYPE_GROUPS.pdf,
+  ...FILE_TYPE_GROUPS.document
+];
+
+const allFileExtensions = [
+  ...FILE_EXTENSION_GROUPS.image,
+  ...FILE_EXTENSION_GROUPS.zip,
+  ...FILE_EXTENSION_GROUPS.spreadsheet,
+  ...FILE_EXTENSION_GROUPS.presentation,
+  ...FILE_EXTENSION_GROUPS.pdf,
+  ...FILE_EXTENSION_GROUPS.document
 ];
 
 const fileFilter = (req, file, cb) => {
-  const allAllowedMimes = [...documentFileMimes, ...imageFileMimes];
-  if (allAllowedMimes.includes(file.mimetype)) {
+  const extension = path.extname(file.originalname).toLowerCase().replace('.', '');
+  if (allFileMimes.includes(file.mimetype) || allFileExtensions.includes(extension)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only documents (PDF, DOC, XLS, PPT) and images (JPG, PNG) are allowed.'), false);
+    cb(new Error('Invalid file type. Only images, zip/rar/7z archives, PDFs, Word documents, spreadsheets, presentations, and text files are allowed.'), false);
   }
 };
 
@@ -165,5 +182,10 @@ module.exports = {
   upload,
   scannedFileMimes,
   documentFileMimes,
-  imageFileMimes
+  imageFileMimes,
+  pdfFileMimes,
+  zipFileMimes,
+  fileCategoryMimes,
+  allFileMimes,
+  allFileExtensions
 };

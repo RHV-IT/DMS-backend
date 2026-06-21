@@ -29,6 +29,11 @@ const fileSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  fileCategory: {
+    type: String,
+    enum: ['image', 'zip', 'spreadsheet', 'presentation', 'pdf', 'document', 'other'],
+    default: 'other'
+  },
   size: {
     type: Number,
     required: true

@@ -542,7 +542,8 @@ Get all files accessible to user based on role:
 |-------|------|-------------|
 | page | number | Page number |
 | limit | number | Items per page |
-| type | string | Filter by file type |
+| type | string | Filter by exact extension/type value, for example `pdf`, `docx`, `xlsx`, `pptx`, `zip` |
+| fileCategory/category | string | Filter by file category: `image`, `zip`, `spreadsheet`, `presentation`, `pdf`, or `document` (`docs` is also accepted as `document`) |
 | owner | string | Filter by owner ID |
 | department | string | Filter by department (admin/hod only) |
 | fromDate | date | Filter from date |
@@ -600,6 +601,7 @@ Get archive files accessible to the current user based on department and confide
 | page | number | Page number (default: 1) |
 | limit | number | Items per page (default: 20) |
 | search | string | Search by name/alias/tags |
+| fileCategory/category | string | Filter by file category: `image`, `zip`, `spreadsheet`, `presentation`, `pdf`, or `document` (`docs` is also accepted as `document`) |
 | confidentialityLevel | string | Filter by confidentiality level |
 | uploadedBy | string | Filter by uploader user ID |
 | sortBy | string | Sort field (default: createdAt) |
@@ -670,6 +672,7 @@ public < internal < confidential < highly_confidential
         "name": "budget.pdf",
         "alias": "Budget Report",
         "type": "pdf",
+        "fileCategory": "pdf",
         "size": 1024000,
         "department": {
           "_id": "...",
@@ -740,7 +743,7 @@ Upload a single file.
 **Form Data:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| file | file | Yes | The file to upload |
+| file | file | Yes | The file to upload. Supported: images, ZIP/RAR/7Z archives, PDFs, Word documents, spreadsheets, presentations, and text files |
 | alias | string | No | Friendly name |
 | tags | string | No | Comma-separated tags |
 | confidentialityLevel | string | No | File confidentiality level |
@@ -753,6 +756,7 @@ Upload a single file.
     "fileId": "ABC123DEF456",
     "name": "document.pdf",
     "type": "pdf",
+    "fileCategory": "pdf",
     "size": 1024000,
     "confidentialityLevel": "internal",
     "isScanned": false,
@@ -1128,9 +1132,18 @@ Get list of supported file types.
 {
   "success": true,
   "data": {
-    "scanned": ["application/pdf", "image/jpeg", "image/png", "image/tiff", "image/bmp"],
-    "documents": ["application/pdf", "application/msword", ...],
-    "images": ["image/jpeg", "image/png", "image/gif", ...]
+    "categories": ["image", "zip", "spreadsheet", "presentation", "pdf", "document", "other"],
+    "filters": {
+      "image": { "mimeTypes": ["image/jpeg", "image/png", "image/gif", "image/tiff", "image/bmp", "image/webp"], "extensions": ["jpg", "jpeg", "png", "gif", "tiff", "tif", "bmp", "webp"] },
+      "zip": { "mimeTypes": ["application/zip", "application/x-zip-compressed", "application/x-rar-compressed", "application/x-7z-compressed"], "extensions": ["zip", "rar", "7z"] },
+      "spreadsheet": { "mimeTypes": ["application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.oasis.opendocument.spreadsheet", "text/csv"], "extensions": ["xls", "xlsx", "ods", "csv"] },
+      "presentation": { "mimeTypes": ["application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.oasis.opendocument.presentation"], "extensions": ["ppt", "pptx", "odp"] },
+      "pdf": { "mimeTypes": ["application/pdf"], "extensions": ["pdf"] },
+      "document": { "mimeTypes": ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.oasis.opendocument.text", "text/plain", "application/rtf"], "extensions": ["doc", "docx", "odt", "txt", "rtf"] }
+    },
+    "scanned": ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/tiff", "image/bmp", "image/webp"],
+    "documents": ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "text/plain", "application/zip", "application/x-zip-compressed", "application/x-rar-compressed"],
+    "images": ["image/jpeg", "image/png", "image/gif", "image/tiff", "image/bmp", "image/webp"]
   }
 }
 ```

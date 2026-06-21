@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
 const { canViewFile, canUploadLevel, buildFileAccessQuery, canUserAccessFile, canUserAccessFileContents, canUserManageFile, filterAccessibleFiles } = require('../utils/accessControl');
+const { FILE_CATEGORIES, FILE_TYPE_GROUPS, FILE_EXTENSION_GROUPS } = require('../constants');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -15,6 +16,58 @@ const UPLOAD_PATH = process.env.UPLOAD_PATH || (process.env.VERCEL ? '/tmp' : pa
 const CONFIDENTIALITY_LEVELS = ['public', 'internal', 'confidential', 'highly_confidential'];
 
 const getLevelIndex = (level) => CONFIDENTIALITY_LEVELS.indexOf(level);
+
+const getFileCategory = (originalName, mimeType) => {
+  const extension = path.extname(originalName || '').toLowerCase().replace('.', '');
+  const normalizedMime = String(mimeType || '').split(';')[0].trim().toLowerCase();
+
+  const byExtension = Object.keys(FILE_EXTENSION_GROUPS).find(category =>
+    FILE_EXTENSION_GROUPS[category].includes(extension)
+  );
+  if (byExtension) return byExtension;
+
+  return Object.keys(FILE_TYPE_GROUPS).find(category =>
+    FILE_TYPE_GROUPS[category].includes(normalizedMime)
+  ) || FILE_CATEGORIES.OTHER;
+};
+
+const normalizeFileCategory = (category) => {
+  const normalized = String(category || '').toLowerCase().trim();
+  const aliases = {
+    docs: FILE_CATEGORIES.DOCUMENT,
+    doc: FILE_CATEGORIES.DOCUMENT,
+    word: FILE_CATEGORIES.DOCUMENT,
+    images: FILE_CATEGORIES.IMAGE,
+    img: FILE_CATEGORIES.IMAGE,
+    zipped: FILE_CATEGORIES.ZIP,
+    archive: FILE_CATEGORIES.ZIP,
+    archives: FILE_CATEGORIES.ZIP,
+    compressed: FILE_CATEGORIES.ZIP,
+    spreadsheets: FILE_CATEGORIES.SPREADSHEET,
+    xls: FILE_CATEGORIES.SPREADSHEET,
+    xlsx: FILE_CATEGORIES.SPREADSHEET,
+    presentations: FILE_CATEGORIES.PRESENTATION,
+    ppt: FILE_CATEGORIES.PRESENTATION,
+    powerpoint: FILE_CATEGORIES.PRESENTATION,
+    powerpoints: FILE_CATEGORIES.PRESENTATION
+  };
+
+  if (aliases[normalized]) return aliases[normalized];
+  if (Object.values(FILE_CATEGORIES).includes(normalized)) return normalized;
+  return null;
+};
+
+const buildFileCategoryQuery = (category) => {
+  const normalized = normalizeFileCategory(category);
+  if (!normalized) return null;
+
+  return {
+    $or: [
+      { fileCategory: normalized },
+      { type: { $in: FILE_EXTENSION_GROUPS[normalized] || [] } }
+    ]
+  };
+};
 
 const fileController = {
   uploadFile: async (req, res, next) => {
@@ -78,6 +131,7 @@ const fileController = {
         originalFileName: req.file.originalname,
         alias: alias || req.file.originalname,
         type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
+        fileCategory: getFileCategory(req.file.originalname, req.file.mimetype),
         size: req.file.size,
         owner: user._id,
         uploadedBy: user._id,
@@ -201,6 +255,7 @@ const fileController = {
           originalFileName: file.originalname,
           alias: alias,
           type: path.extname(file.originalname).toLowerCase().replace('.', ''),
+          fileCategory: getFileCategory(file.originalname, file.mimetype),
           size: file.size,
           owner: user._id,
           uploadedBy: user._id,
@@ -384,6 +439,8 @@ const fileController = {
         page = 1, 
         limit = 20, 
         type, 
+        fileCategory,
+        category,
         owner, 
         department, 
         fromDate, 
@@ -417,6 +474,20 @@ const fileController = {
       }
 
       if (type) query.type = type;
+      if (fileCategory || category) {
+        const categoryQuery = buildFileCategoryQuery(fileCategory || category);
+        if (!categoryQuery) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid file category. Supported categories: image, zip, spreadsheet, presentation, pdf, document.'
+          });
+        }
+        if (query.$or) {
+          query.$and = (query.$and || []).concat([categoryQuery]);
+        } else {
+          query.$or = categoryQuery.$or;
+        }
+      }
       if (confidentiality) query.confidentialityLevel = confidentiality;
       if (fromDate || toDate) {
         query.createdAt = query.createdAt || {};
@@ -486,6 +557,8 @@ const fileController = {
         page = 1,
         limit = 20,
         search,
+        fileCategory,
+        category,
         confidentialityLevel,
         uploadedBy,
         sortBy = 'createdAt',
@@ -517,6 +590,20 @@ const fileController = {
         query = { ...strictQuery };
       }
 
+      if (fileCategory || category) {
+        const categoryQuery = buildFileCategoryQuery(fileCategory || category);
+        if (!categoryQuery) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid file category. Supported categories: image, zip, spreadsheet, presentation, pdf, document.'
+          });
+        }
+        if (query.$or) {
+          query.$and = (query.$and || []).concat([categoryQuery]);
+        } else {
+          query.$or = categoryQuery.$or;
+        }
+      }
       if (confidentialityLevel) query.confidentialityLevel = confidentialityLevel;
       if (uploadedBy) {
         if (user.role === 'admin' || uploadedBy.toString() === user._id.toString()) {
@@ -558,6 +645,7 @@ const fileController = {
         name: file.name || 'Unnamed File',
         alias: file.alias || '',
         type: file.type || 'unknown',
+        fileCategory: file.fileCategory || getFileCategory(file.originalFileName || file.name, file.mimeType),
         department: file.department || 'Unknown',
         confidentialityLevel: file.confidentialityLevel || 'internal',
         uploadedBy: file.uploadedBy || file.owner
@@ -578,7 +666,7 @@ const fileController = {
           fileCount: processedFiles.length,
           department: user.department,
           confidentialityLevel: user.getConfidentialityLevel(),
-          filters: { search, confidentialityLevel, uploadedBy, page, limit }
+          filters: { search, fileCategory: fileCategory || category, confidentialityLevel, uploadedBy, page, limit }
         },
         ipAddress: req.ip,
         userAgent: req.get('user-agent'),
@@ -889,7 +977,7 @@ const fileController = {
 
   getDeletedFiles: async (req, res, next) => {
     try {
-      const { page = 1, limit = 20 } = req.query;
+      const { page = 1, limit = 20, fileCategory, category } = req.query;
       const user = req.user;
       const now = new Date();
 
@@ -915,6 +1003,21 @@ const fileController = {
         }
 
         query.permanentDeleteAt = { $gt: now };
+      }
+
+      if (fileCategory || category) {
+        const categoryQuery = buildFileCategoryQuery(fileCategory || category);
+        if (!categoryQuery) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid file category. Supported categories: image, zip, spreadsheet, presentation, pdf, document.'
+          });
+        }
+        if (query.$or) {
+          query.$and = (query.$and || []).concat([categoryQuery]);
+        } else {
+          query.$or = categoryQuery.$or;
+        }
       }
 
       const files = await File.find(query)
@@ -1072,6 +1175,7 @@ const fileController = {
         originalFileName: req.file.originalname,
         alias: alias || req.file.originalname,
         type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
+        fileCategory: getFileCategory(req.file.originalname, req.file.mimetype),
         size: req.file.size,
         owner: user._id,
         uploadedBy: user._id,
@@ -1163,6 +1267,7 @@ const fileController = {
           originalFileName: file.originalname,
           alias: file.originalname,
           type: path.extname(file.originalname).toLowerCase().replace('.', ''),
+          fileCategory: getFileCategory(file.originalname, file.mimetype),
           size: file.size,
           owner: user._id,
           uploadedBy: user._id,

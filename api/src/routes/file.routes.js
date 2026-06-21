@@ -3,6 +3,7 @@ const router = express.Router();
 const fileController = require('../controllers/fileController');
 const auth = require('../middlewares/authMiddleware');
 const { handleUpload, handleBulkUpload, handleScannedUpload, handleScannedBulkUpload } = require('../middlewares/uploadMiddleware');
+const { FILE_CATEGORIES, FILE_TYPE_GROUPS, FILE_EXTENSION_GROUPS } = require('../constants');
 
 router.use(auth);
 
@@ -47,9 +48,42 @@ router.get('/types/supported', (req, res) => {
   res.json({
     success: true,
     data: {
-      scanned: ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff', 'image/bmp'],
-      documents: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'text/plain', 'application/zip', 'application/x-rar-compressed'],
-      images: ['image/jpeg', 'image/png', 'image/gif', 'image/tiff', 'image/bmp']
+      categories: Object.values(FILE_CATEGORIES),
+      filters: {
+        image: {
+          mimeTypes: FILE_TYPE_GROUPS.image,
+          extensions: FILE_EXTENSION_GROUPS.image
+        },
+        zip: {
+          mimeTypes: FILE_TYPE_GROUPS.zip,
+          extensions: FILE_EXTENSION_GROUPS.zip
+        },
+        spreadsheet: {
+          mimeTypes: FILE_TYPE_GROUPS.spreadsheet,
+          extensions: FILE_EXTENSION_GROUPS.spreadsheet
+        },
+        presentation: {
+          mimeTypes: FILE_TYPE_GROUPS.presentation,
+          extensions: FILE_EXTENSION_GROUPS.presentation
+        },
+        pdf: {
+          mimeTypes: FILE_TYPE_GROUPS.pdf,
+          extensions: FILE_EXTENSION_GROUPS.pdf
+        },
+        document: {
+          mimeTypes: FILE_TYPE_GROUPS.document,
+          extensions: FILE_EXTENSION_GROUPS.document
+        }
+      },
+      scanned: ['application/pdf', ...FILE_TYPE_GROUPS.image],
+      documents: [
+        ...FILE_TYPE_GROUPS.pdf,
+        ...FILE_TYPE_GROUPS.document,
+        ...FILE_TYPE_GROUPS.spreadsheet,
+        ...FILE_TYPE_GROUPS.presentation,
+        ...FILE_TYPE_GROUPS.zip
+      ],
+      images: FILE_TYPE_GROUPS.image
     }
   });
 });

@@ -56,6 +56,34 @@ module.exports = {
     IMPORT: 'import'
   },
 
+  FILE_CATEGORIES: {
+    IMAGE: 'image',
+    ZIP: 'zip',
+    SPREADSHEET: 'spreadsheet',
+    PRESENTATION: 'presentation',
+    PDF: 'pdf',
+    DOCUMENT: 'document',
+    OTHER: 'other'
+  },
+
+  FILE_TYPE_GROUPS: {
+    image: ['image/jpeg', 'image/png', 'image/gif', 'image/tiff', 'image/bmp', 'image/webp'],
+    zip: ['application/zip', 'application/x-zip-compressed', 'application/x-rar-compressed', 'application/x-7z-compressed'],
+    spreadsheet: ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.oasis.opendocument.spreadsheet', 'text/csv'],
+    presentation: ['application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.oasis.opendocument.presentation'],
+    pdf: ['application/pdf'],
+    document: ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.oasis.opendocument.text', 'text/plain', 'application/rtf']
+  },
+
+  FILE_EXTENSION_GROUPS: {
+    image: ['jpg', 'jpeg', 'png', 'gif', 'tiff', 'tif', 'bmp', 'webp'],
+    zip: ['zip', 'rar', '7z'],
+    spreadsheet: ['xls', 'xlsx', 'ods', 'csv'],
+    presentation: ['ppt', 'pptx', 'odp'],
+    pdf: ['pdf'],
+    document: ['doc', 'docx', 'odt', 'txt', 'rtf']
+  },
+
   AUDIT_ACTIONS: {
     LOGIN: 'login',
     LOGOUT: 'logout',

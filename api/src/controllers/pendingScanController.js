@@ -21,6 +21,20 @@ const UPLOAD_PATH = process.env.UPLOAD_PATH
 // Use a subdirectory of the temp uploads directory for consistency
 let PENDING_UPLOAD_PATH = process.env.PENDING_UPLOAD_PATH || path.join(UPLOAD_PATH, 'pending');
 
+const getFileCategory = (originalName, mimeType) => {
+  const extension = path.extname(originalName || '').toLowerCase().replace('.', '');
+  const normalizedMime = String(mimeType || '').split(';')[0].trim().toLowerCase();
+
+  const byExtension = Object.keys(FILE_EXTENSION_GROUPS).find(category =>
+    FILE_EXTENSION_GROUPS[category].includes(extension)
+  );
+  if (byExtension) return byExtension;
+
+  return Object.keys(FILE_TYPE_GROUPS).find(category =>
+    FILE_TYPE_GROUPS[category].includes(normalizedMime)
+  ) || FILE_CATEGORIES.OTHER;
+};
+
 /**
  * Generate a stable file fingerprint for deduplication
  * Uses SHA256 hash of file content + metadata for uniqueness
@@ -423,7 +437,8 @@ const scannerController = {
       let storagePathOrUrl;
       let usedBlob = false;
       try {
-        const { put } = require('@vercel/blob');
+const { put } = require('@vercel/blob');
+const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('../constants');
         const safeName = pendingScan.originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
         const blobName = `${Date.now()}-${uuidv4()}-${safeName}`;
         const blob = await put(`files/confirmed/${blobName}`, buffer, {
@@ -460,6 +475,7 @@ const scannerController = {
         originalFileName: pendingScan.originalName,
         alias: alias || pendingScan.originalName,
         type: finalFormat,
+        fileCategory: getFileCategory(pendingScan.originalName, mimeType),
         size: buffer.length,
         owner: user._id,
         uploadedBy: user._id,
