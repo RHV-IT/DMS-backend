@@ -1,5 +1,7 @@
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
+const Notification = require('../models/Notification');
+const Department = require('../models/Department');
 const { validationResult } = require('express-validator');
 const { sendWelcomeEmail } = require('../services/emailService');
 
@@ -67,6 +69,13 @@ const normalizeConfidentialityInput = ({ confidentialityLevels, confidentialityL
   }
 
   return { levels: uniqueLevels };
+};
+
+const validateDepartment = async (departmentName) => {
+  if (!departmentName) return { valid: false, error: 'Department is required' };
+  const dept = await Department.findOne({ name: departmentName.trim().toUpperCase(), isActive: true });
+  if (!dept) return { valid: false, error: 'Department does not exist or is inactive' };
+  return { valid: true, department: dept };
 };
 
 const userController = {
@@ -171,6 +180,11 @@ const userController = {
         return res.status(400).json({ success: false, message: 'Email already registered' });
       }
 
+      const deptCheck = await validateDepartment(department);
+      if (!deptCheck.valid) {
+        return res.status(400).json({ success: false, message: deptCheck.error });
+      }
+
       const user = await User.create({
         name,
         email,
@@ -250,6 +264,13 @@ const userController = {
         const nextDepartment = department || user.department;
         if (nextDepartment !== req.user.department) {
           return res.status(403).json({ success: false, message: 'HODs cannot move users outside their department' });
+        }
+      }
+
+      if (department && department !== user.department) {
+        const deptCheck = await validateDepartment(department);
+        if (!deptCheck.valid) {
+          return res.status(400).json({ success: false, message: deptCheck.error });
         }
       }
 
@@ -449,7 +470,180 @@ const userController = {
     } catch (error) {
       next(error);
     }
+  },
+
+  // Request endpoints for HOD
+  requestSuspend: async (req, res, next) => {
+    try {
+      const targetUserId = req.params.id;
+      const hod = req.user;
+
+      // HOD can only request for users in their own department
+      const targetUser = await User.findById(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      if (targetUser.department !== hod.department) {
+        return res.status(403).json({ success: false, message: 'HOD can only request actions for users in their own department' });
+      }
+      if (targetUser.role === 'admin') {
+        return res.status(400).json({ success: false, message: 'Cannot request action on admin user' });
+      }
+
+      // Create notification for admins
+      const admins = await User.find({ role: 'admin' });
+      for (const admin of admins) {
+        await Notification.create({
+          userId: admin._id,
+          message: `HOD ${hod.name} (${hod.email}) requests suspension of user ${targetUser.name} (${targetUser.email})`,
+          type: 'user_action_request',
+          resourceId: targetUserId,
+          sharedBy: hod._id,
+          isRead: false,
+          details: {
+            action: 'suspend',
+            targetUserId: targetUserId,
+            hodId: hod._id,
+            hodName: hod.name,
+            hodEmail: hod.email,
+            requestedAt: new Date()
+          }
+        });
+      }
+
+      await AuditLog.create({
+        userId: hod._id,
+        userEmail: hod.email,
+        action: 'user_request_suspend',
+        resource: 'user',
+        resourceId: targetUserId,
+        details: { targetUserId, requestedBy: hod._id },
+        ipAddress: req.ip
+      });
+
+      res.json({ success: true, message: 'Suspension request sent to admins' });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  requestEdit: async (req, res, next) => {
+    try {
+      const targetUserId = req.params.id;
+      const hod = req.user;
+
+      const targetUser = await User.findById(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      if (targetUser.department !== hod.department) {
+        return res.status(403).json({ success: false, message: 'HOD can only request actions for users in their own department' });
+      }
+      if (targetUser.role === 'admin') {
+        return res.status(400).json({ success: false, message: 'Cannot request action on admin user' });
+      }
+
+      // Prevent hod from requesting changes to role, status, confidentialityLevels, confidentialityLevel
+      const restrictedFields = ['role', 'status', 'confidentialityLevels', 'confidentialityLevel'];
+      const hasRestricted = Object.keys(updates).some(field => restrictedFields.includes(field));
+      if (hasRestricted) {
+        return res.status(400).json({ success: false, message: 'HOD cannot request changes to role, status, or confidentiality levels' });
+      }
+
+      // Prevent hod from requesting to change department to a different one
+      if (updates.department && updates.department !== hod.department) {
+        return res.status(400).json({ success: false, message: 'HOD cannot request to change user to another department' });
+      }
+
+      // Create notification for admins
+      const admins = await User.find({ role: 'admin' });
+      for (const admin of admins) {
+        await Notification.create({
+          userId: admin._id,
+          message: `HOD ${hod.name} (${hod.email}) requests edit of user ${targetUser.name} (${targetUser.email})`,
+          type: 'user_action_request',
+          resourceId: targetUserId,
+          sharedBy: hod._id,
+          isRead: false,
+          details: {
+            action: 'edit',
+            targetUserId: targetUserId,
+            hodId: hod._id,
+            hodName: hod.name,
+            hodEmail: hod.email,
+            requestedChanges: updates,
+            requestedAt: new Date()
+          }
+        });
+      }
+
+      await AuditLog.create({
+        userId: hod._id,
+        userEmail: hod.email,
+        action: 'user_request_edit',
+        resource: 'user',
+        resourceId: targetUserId,
+        details: { targetUserId, requestedBy: hod._id, changes: updates },
+        ipAddress: req.ip
+      });
+
+      res.json({ success: true, message: 'Edit request sent to admins' });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  requestPasswordReset: async (req, res, next) => {
+    try {
+      const targetUserId = req.params.id;
+      const hod = req.user;
+
+      const targetUser = await User.findById(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      if (targetUser.department !== hod.department) {
+        return res.status(403).json({ success: false, message: 'HOD can only request actions for users in their own department' });
+      }
+      if (targetUser.role === 'admin') {
+        return res.status(400).json({ success: false, message: 'Cannot request action on admin user' });
+      }
+
+      // Create notification for admins
+      const admins = await User.find({ role: 'admin' });
+      for (const admin of admins) {
+        await Notification.create({
+          userId: admin._id,
+          message: `HOD ${hod.name} (${hod.email}) requests password reset for user ${targetUser.name} (${targetUser.email})`,
+          type: 'user_action_request',
+          resourceId: targetUserId,
+          sharedBy: hod._id,
+          isRead: false,
+          details: {
+            action: 'password_reset',
+            targetUserId: targetUserId,
+            hodId: hod._id,
+            hodName: hod.name,
+            hodEmail: hod.email,
+            requestedAt: new Date()
+          }
+        });
+      }
+
+      await AuditLog.create({
+        userId: hod._id,
+        userEmail: hod.email,
+        action: 'user_request_password_reset',
+        resource: 'user',
+        resourceId: targetUserId,
+        details: { targetUserId, requestedBy: hod._id },
+        ipAddress: req.ip
+      });
+
+      res.json({ success: true, message: 'Password reset request sent to admins' });
+    } catch (error) {
+      next(error);
+    }
   }
 };
-
 module.exports = userController;

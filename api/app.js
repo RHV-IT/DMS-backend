@@ -24,6 +24,7 @@ const srcPermissionRoutes = require("./src/routes/permission.routes");
 const srcSettingsRoutes = require("./src/routes/settings.routes");
 const srcPendingScanRoutes = require("./src/routes/pendingScan.routes");
 const srcConfigRoutes = require("./src/routes/config.routes");
+const srcDepartmentRoutes = require("./src/routes/department.routes");
 //database connection - using Mongoose for consistency with models
 const connectDB = require("./src/config/database");
 
@@ -148,6 +149,9 @@ app.use('/api/v1/settings', srcSettingsRoutes);
 
 console.log("Mounted config routes");
 app.use('/api/v1/config', srcConfigRoutes);
+
+console.log("Mounted department routes");
+app.use('/api/v1/departments', srcDepartmentRoutes);
 
 // TEST ROUTE for debugging
 app.get("/test", (req, res) => {

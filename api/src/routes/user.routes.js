@@ -35,4 +35,9 @@ router.post('/:id/delete', roleMiddleware('admin'), userController.deleteUser);
 
 router.post('/:id/activate', roleMiddleware('admin'), userController.activateUser);
 
+// HOD request endpoints
+router.post('/:id/request-suspend', roleMiddleware('hod'), userController.requestSuspend);
+router.post('/:id/request-edit', roleMiddleware('hod'), userController.requestEdit);
+router.post('/:id/request-password-reset', roleMiddleware('hod'), userController.requestPasswordReset);
+
 module.exports = router;

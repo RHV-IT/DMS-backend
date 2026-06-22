@@ -12,7 +12,7 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['file_shared', 'access_revoked', 'file_updated', 'system', 'file_deleted'],
+    enum: ['file_shared', 'access_revoked', 'file_updated', 'system', 'file_deleted', 'user_action_request'],
     required: true
   },
   resourceId: {
@@ -21,6 +21,10 @@ const notificationSchema = new mongoose.Schema({
   sharedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+  details: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   },
   isRead: {
     type: Boolean,

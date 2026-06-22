@@ -1150,6 +1150,104 @@ Get list of supported file types.
 
 ---
 
+## 4b. Departments (Admin Only)
+
+> **Base URL:** `/api/v1/departments`
+
+> **Note:** All department endpoints require `Authorization: Bearer <accessToken>` header. Write operations are admin-only.
+
+### Get All Departments
+**Endpoint:** `GET /api/v1/departments`
+
+**Query Parameters:**
+| Param | Type | Description |
+|-------|------|-------------|
+| includeInactive | boolean | Include deactivated departments (default: false) |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "...",
+      "name": "IT",
+      "code": "IT",
+      "description": "Information Technology",
+      "isActive": true,
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Get Department By ID
+**Endpoint:** `GET /api/v1/departments/:id`
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": { ...department object }
+}
+```
+
+### Create Department
+**Endpoint:** `POST /api/v1/departments`
+
+**Request Body:**
+```json
+{
+  "name": "Finance",
+  "code": "FIN",
+  "description": "Finance Department"
+}
+```
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "data": { ...department object }
+}
+```
+
+### Update Department
+**Endpoint:** `PUT /api/v1/departments/:id`
+
+**Request Body:**
+```json
+{
+  "name": "Finance Updated",
+  "code": "FIN",
+  "description": "Updated description",
+  "isActive": true
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": { ...department object }
+}
+```
+
+### Delete Department (Soft Delete)
+**Endpoint:** `DELETE /api/v1/departments/:id`
+
+Sets `isActive` to `false`. Users in this department remain but new users cannot be assigned to it.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Department deactivated successfully"
+}
+```
+
+---
+
 ## 5. Permissions
 
 > **Base URL:** `/api/v1/permissions`
