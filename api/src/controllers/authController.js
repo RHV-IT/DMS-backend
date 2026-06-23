@@ -42,9 +42,18 @@ const authController = {
         confidentialityLevels: ['public', 'internal'],
         // singular deprecated - never set to avoid frontend conflict
         passwordLastChanged: new Date(),
+        profiles: [{
+          profileId: new (require('mongoose')).Types.ObjectId(),
+          department: department.toUpperCase(),
+          confidentialityLevels: ['public', 'internal'],
+          isPrimary: true,
+          status: 'active'
+        }]
       });
 
-      const accessToken = authService.generateAccessToken(user);
+      // Use primary profile for token generation
+      const activeProfile = user.getPrimaryProfile();
+      const accessToken = authService.generateAccessToken(user, false, activeProfile);
       const refreshToken = authService.generateRefreshToken(user);
 
       // Store refresh token in database
@@ -85,6 +94,19 @@ const authController = {
             confidentialityLevels: user.confidentialityLevels,
             confidentialityLevel: user.getConfidentialityLevel(),
           },
+          profiles: (user.profiles || []).filter(p => p.status === 'active').map(p => ({
+            profileId: p.profileId,
+            department: p.department,
+            confidentialityLevels: p.confidentialityLevels,
+            isPrimary: p.isPrimary,
+            status: p.status
+          })),
+          activeProfile: activeProfile ? {
+            profileId: activeProfile.profileId,
+            department: activeProfile.department,
+            confidentialityLevels: activeProfile.confidentialityLevels,
+            isPrimary: activeProfile.isPrimary
+          } : null,
           accessToken,
           refreshToken,
           rememberMe: false,
@@ -221,6 +243,9 @@ const authController = {
       // Set the new token cookie
       res.cookie("token", accessToken, cookieConfig);
 
+      // Get active profile (primary or first active)
+      const activeProfile = user.getPrimaryProfile();
+
       const isFirstLogin = user.loginCount === 1;
       const agentRequired = true; // Scanner agent is always required for this system
       const agentConnected = user.agentConnected || false;
@@ -240,6 +265,19 @@ const authController = {
             loginCount: user.loginCount,
             passwordExpired,
           },
+          profiles: (user.profiles || []).filter(p => p.status === 'active').map(p => ({
+            profileId: p.profileId,
+            department: p.department,
+            confidentialityLevels: p.confidentialityLevels,
+            isPrimary: p.isPrimary,
+            status: p.status
+          })),
+          activeProfile: activeProfile ? {
+            profileId: activeProfile.profileId,
+            department: activeProfile.department,
+            confidentialityLevels: activeProfile.confidentialityLevels,
+            isPrimary: activeProfile.isPrimary
+          } : null,
           accessToken,
           refreshToken,
           rememberMe,
@@ -451,6 +489,69 @@ const authController = {
 
       res.json({ success: true, data: user });
     } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Switch Active Profile
+   * POST /api/v1/auth/switch-profile
+   * Body: { profileId: "..." }
+   */
+  switchProfile: async (req, res, next) => {
+    const requestId = Math.random().toString(36).substring(2, 8);
+    try {
+      const { profileId } = req.body;
+      const user = req.user;
+
+      if (!profileId) {
+        return res.status(400).json({ success: false, message: "profileId is required" });
+      }
+
+      // Find the profile in user's profiles
+      const profile = user.profiles?.find(p => p.profileId.toString() === profileId && p.status === 'active');
+
+      if (!profile) {
+        logger.warn(`[AUTH:SWITCH-PROFILE:${requestId}] Profile not found or inactive: ${profileId} for user ${user.email}`);
+        return res.status(404).json({ success: false, message: "Profile not found or inactive" });
+      }
+
+      // Generate new access token with the selected profile
+      const accessToken = authService.generateAccessToken(user, false, profile);
+      const refreshToken = authService.generateRefreshToken(user);
+
+      // Update refresh token in database
+      user.refreshToken = refreshToken;
+      await user.save();
+
+      // Set new cookie
+      const cookieConfig = authService.getCookieConfig();
+      res.clearCookie("token", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+      });
+      res.cookie("token", accessToken, cookieConfig);
+
+      await createAuditLog(req, user, "profile_switch", "auth", null, { 
+        profileId: profile.profileId.toString(), 
+        department: profile.department 
+      });
+
+      logger.info(`[AUTH:SWITCH-PROFILE:${requestId}] User ${user.email} switched to profile ${profile.department} (${profile.profileId})`);
+
+      res.json({
+        success: true,
+        activeProfile: {
+          profileId: profile.profileId,
+          department: profile.department,
+          confidentialityLevels: profile.confidentialityLevels,
+          isPrimary: profile.isPrimary
+        }
+      });
+    } catch (error) {
+      logger.error(`[AUTH:SWITCH-PROFILE:${requestId}] Error: ${error.message}`, { stack: error.stack });
       next(error);
     }
   },

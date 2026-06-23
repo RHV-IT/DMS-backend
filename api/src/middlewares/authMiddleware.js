@@ -148,12 +148,16 @@ const auth = async (req, res, next) => {
     // No automatic confidentiality normalization happens during login.
 
     // Attach user data to request for downstream use
+    // Include profile info from JWT (for multi-profile support)
     req.user = user;
+    req.user.profileId = decoded.profileId || null;
+    req.user.department = decoded.department || user.department;
+    req.user.confidentialityLevels = decoded.confidentialityLevels || user.confidentialityLevels || ['public', 'internal'];
     req.token = token;
     req.tokenRememberMe = decoded.rememberMe;
     req.requestId = requestId;
 
-    logger.debug(`[AUTH:${requestId}] ✅ Auth successful: ${user.email} (${user.role})`);
+    logger.debug(`[AUTH:${requestId}] ✅ Auth successful: ${user.email} (${user.role}) profileId: ${req.user.profileId} department: ${req.user.department}`);
     next();
   } catch (error) {
     // ================================================================

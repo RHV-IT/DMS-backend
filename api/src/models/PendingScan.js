@@ -73,6 +73,11 @@ const pendingScanSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Profile ID for multi-profile support
+  profileId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
   machineId: {
     type: String,
     required: true

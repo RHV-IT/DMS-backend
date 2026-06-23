@@ -25,6 +25,11 @@ const fileSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  // Profile that uploaded this file (for multi-profile support)
+  profileId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
   type: {
     type: String,
     required: true

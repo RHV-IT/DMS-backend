@@ -177,13 +177,14 @@ const scannerController = {
         status: 'pending',
         fileSize,
         mimeType: mimeType || 'application/octet-stream',
-        department: user?.department || 'unknown',
-        assignedTo: user?._id || null,
+        department: user.department,
+        profileId: user.profileId || null,
+        assignedTo: user._id,
         machineId: finalMachineId,
         fileFingerprint,
         machineMetadata: {},
         scannerMetadata: {
-          scannerId: user?._id || null,
+          scannerId: user._id,
           scannedAt: new Date(),
           originalExtension: originalExt,
           originalPath
@@ -479,9 +480,14 @@ const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('..
         size: buffer.length,
         owner: user._id,
         uploadedBy: user._id,
+        profileId: pendingScan.profileId || user.profileId || null,
         department: pendingScan.department,
         uploadedByDepartment: user.department,
-        uploadedByConfidentiality: user.getConfidentialityLevel(),
+        uploadedByConfidentiality: user.confidentialityLevels ? 
+          user.confidentialityLevels.sort((a, b) => {
+            const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+            return (ranks[b] || 0) - (ranks[a] || 0);
+          })[0] : 'internal',
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: confidentialityLevel,
         mimeType: mimeType || 'application/octet-stream',

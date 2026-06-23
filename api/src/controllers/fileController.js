@@ -135,9 +135,14 @@ const fileController = {
         size: req.file.size,
         owner: user._id,
         uploadedBy: user._id,
+        profileId: user.profileId || null,
         department: user.department,
         uploadedByDepartment: user.department,
-        uploadedByConfidentiality: user.getConfidentialityLevel(),
+        uploadedByConfidentiality: user.confidentialityLevels ? 
+          user.confidentialityLevels.sort((a, b) => {
+            const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+            return (ranks[b] || 0) - (ranks[a] || 0);
+          })[0] : 'internal',
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: fileLevel,
         mimeType: req.file.mimetype || 'application/octet-stream',
@@ -259,9 +264,14 @@ const fileController = {
           size: file.size,
           owner: user._id,
           uploadedBy: user._id,
+          profileId: user.profileId || null,
           department: user.department,
           uploadedByDepartment: user.department,
-          uploadedByConfidentiality: user.getConfidentialityLevel(),
+          uploadedByConfidentiality: user.confidentialityLevels ? 
+            user.confidentialityLevels.sort((a, b) => {
+              const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+              return (ranks[b] || 0) - (ranks[a] || 0);
+            })[0] : 'internal',
           confidentialityLevel: fileLevel,
           mimeType: file.mimetype || 'application/octet-stream',
           storagePath: storageLocation
@@ -1179,9 +1189,14 @@ const fileController = {
         size: req.file.size,
         owner: user._id,
         uploadedBy: user._id,
+        profileId: user.profileId || null,
         department: user.department,
         uploadedByDepartment: user.department,
-        uploadedByConfidentiality: user.getConfidentialityLevel(),
+        uploadedByConfidentiality: user.confidentialityLevels ? 
+          user.confidentialityLevels.sort((a, b) => {
+            const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+            return (ranks[b] || 0) - (ranks[a] || 0);
+          })[0] : 'internal',
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
         confidentialityLevel: fileLevel,
         mimeType: req.file.mimetype || 'application/octet-stream',
@@ -1271,9 +1286,14 @@ const fileController = {
           size: file.size,
           owner: user._id,
           uploadedBy: user._id,
+          profileId: user.profileId || null,
           department: user.department,
           uploadedByDepartment: user.department,
-          uploadedByConfidentiality: user.getConfidentialityLevel(),
+          uploadedByConfidentiality: user.confidentialityLevels ? 
+            user.confidentialityLevels.sort((a, b) => {
+              const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+              return (ranks[b] || 0) - (ranks[a] || 0);
+            })[0] : 'internal',
           confidentialityLevel: fileLevel,
           mimeType: file.mimetype || 'application/octet-stream',
           isScanned: isScannedDoc,

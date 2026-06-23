@@ -11,10 +11,15 @@ class AuthService {
    * FIX #7: Token expiry now properly configurable via environment.
    * Defaults to 15 minutes for production security.
    */
-  generateAccessToken(user, rememberMe = false) {
+  generateAccessToken(user, rememberMe = false, activeProfile = null) {
     // Environment-based expiry takes priority
     const defaultExpiry = process.env.JWT_EXPIRE || "15m";
     const expiresIn = rememberMe ? process.env.JWT_REMEMBER_EXPIRE || "7d" : defaultExpiry;
+
+    // Use active profile data if available, otherwise fall back to user's legacy fields
+    const department = activeProfile?.department || user.department;
+    const confidentialityLevels = activeProfile?.confidentialityLevels || user.confidentialityLevels || ['public', 'internal'];
+    const profileId = activeProfile?.profileId ? activeProfile.profileId.toString() : null;
 
     const token = jwt.sign(
       {
@@ -22,7 +27,9 @@ class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
-        department: user.department,
+        department: department,
+        profileId: profileId,
+        confidentialityLevels: confidentialityLevels,
         rememberMe,
         // FIX #16: Include issued-at for token refresh validation
         iat: Math.floor(Date.now() / 1000),
@@ -31,7 +38,7 @@ class AuthService {
       { expiresIn }
     );
 
-    logger.debug(`[AUTH-SERVICE] Generated access token for ${user.email}, expiresIn: ${expiresIn}, rememberMe: ${rememberMe}`);
+    logger.debug(`[AUTH-SERVICE] Generated access token for ${user.email}, expiresIn: ${expiresIn}, rememberMe: ${rememberMe}, profileId: ${profileId}, department: ${department}`);
     return token;
   }
 
@@ -198,7 +205,17 @@ class AuthService {
     }
 
     // Generate new access token
-    const newAccessToken = this.generateAccessToken(user);
+    // Try to get active profile from the decoded token, or use primary profile
+    let activeProfile = null;
+    if (decoded.profileId) {
+      // Get the specific profile from user
+      activeProfile = user.profiles?.find(p => p.profileId.toString() === decoded.profileId);
+    } else {
+      // Use primary profile
+      activeProfile = user.getPrimaryProfile();
+    }
+    
+    const newAccessToken = this.generateAccessToken(user, false, activeProfile);
     logger.debug(`[AUTH-SERVICE:${requestId}] Token refresh successful for ${user.email}`);
 
     return {
@@ -208,9 +225,13 @@ class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
-        department: user.department,
-        confidentialityLevels: user.confidentialityLevels,
-        confidentialityLevel: user.getConfidentialityLevel(),
+        department: activeProfile?.department || user.department,
+        profileId: activeProfile?.profileId ? activeProfile.profileId.toString() : null,
+        confidentialityLevels: activeProfile?.confidentialityLevels || user.confidentialityLevels,
+        confidentialityLevel: activeProfile ? activeProfile.confidentialityLevels.sort((a, b) => {
+          const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+          return (ranks[b] || 0) - (ranks[a] || 0);
+        })[0] : user.getConfidentialityLevel(),
       },
       requestId,
     };

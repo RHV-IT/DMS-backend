@@ -33,7 +33,8 @@ const userSchema = new mongoose.Schema({
     enum: ['admin', 'hod', 'user'],
     default: 'user'
   },
-  // Department the user belongs to (required for all users)
+  // Department the user belongs to (required for all users) - LEGACY: kept for backward compatibility
+  // For multi-profile users, the active profile's department is used via JWT
   department: {
     type: String,
     required: true,
@@ -59,9 +60,38 @@ const userSchema = new mongoose.Schema({
   },
   // Array of confidentiality levels the user is allowed to access.
   // Used for permission checks (e.g., a user with ['public', 'internal'] can view public and internal files).
+  // LEGACY: For multi-profile users, the active profile's confidentialityLevels is used via JWT
   confidentialityLevels: [{
     type: String,
     enum: ['public', 'internal', 'confidential', 'highly_confidential']
+  }],
+  // Multi-department profiles
+  // One user can have multiple department profiles
+  // Each profile has its own department, confidentialityLevels, and permissions
+  profiles: [{
+    profileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: () => new mongoose.Types.ObjectId()
+    },
+    department: {
+      type: String,
+      required: true,
+      trim: true,
+      uppercase: true
+    },
+    confidentialityLevels: [{
+      type: String,
+      enum: ['public', 'internal', 'confidential', 'highly_confidential']
+    }],
+    isPrimary: {
+      type: Boolean,
+      default: false
+    },
+    status: {
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active'
+    }
   }],
   // History of previous passwords to prevent reuse
   passwordHistory: [{
@@ -182,11 +212,56 @@ userSchema.methods.normalizeConfidentiality = async function () {
   return false;
 };
 
+/**
+ * Get the primary (active) profile for the user.
+ * @returns {Object|null} The primary profile or null if not found
+ */
+userSchema.methods.getPrimaryProfile = function () {
+  if (!this.profiles || this.profiles.length === 0) {
+    return null;
+  }
+  const primary = this.profiles.find(p => p.isPrimary && p.status === 'active');
+  if (primary) return primary;
+  return this.profiles.find(p => p.status === 'active') || this.profiles[0];
+};
+
+/**
+ * Get a specific profile by profileId.
+ * @param {string} profileId - The profile ID to find
+ * @returns {Object|null} The profile or null if not found
+ */
+userSchema.methods.getProfileById = function (profileId) {
+  if (!this.profiles || this.profiles.length === 0) {
+    return null;
+  }
+  return this.profiles.find(p => p.profileId.toString() === profileId.toString() && p.status === 'active');
+};
+
+/**
+ * Get all active profiles for the user.
+ * @returns {Array} Array of active profiles
+ */
+userSchema.methods.getActiveProfiles = function () {
+  if (!this.profiles || this.profiles.length === 0) {
+    return [];
+  }
+  return this.profiles.filter(p => p.status === 'active');
+};
+
 // Prevent returning deprecated singular field in API responses (avoids mismatch with array)
 userSchema.set('toJSON', {
   transform: (doc, ret) => {
     delete ret.confidentialityLevel;
     delete ret.__v;
+    if (ret.profiles) {
+      ret.profiles = ret.profiles.map(p => ({
+        profileId: p.profileId,
+        department: p.department,
+        confidentialityLevels: p.confidentialityLevels,
+        isPrimary: p.isPrimary,
+        status: p.status
+      }));
+    }
     return ret;
   }
 });

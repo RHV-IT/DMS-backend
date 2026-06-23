@@ -640,10 +640,301 @@ const userController = {
         ipAddress: req.ip
       });
 
-      res.json({ success: true, message: 'Password reset request sent to admins' });
-    } catch (error) {
-      next(error);
-    }
-  }
+res.json({ success: true, message: 'Password reset request sent to admins' });
+     } catch (error) {
+       next(error);
+     }
+   },
+
+   /**
+    * Add a new profile to a user
+    * POST /api/v1/users/:id/profiles
+    * Access: Admin only
+    */
+   addProfile: async (req, res, next) => {
+     const requestId = Math.random().toString(36).substring(2, 8);
+     try {
+       const { department, confidentialityLevels } = req.body;
+       const user = await User.findById(req.params.id);
+
+       if (!user) {
+         return res.status(404).json({ success: false, message: "User not found" });
+       }
+
+       if (!department) {
+         return res.status(400).json({ success: false, message: "Department is required" });
+       }
+
+       // Check if profile already exists for this department
+       const existingProfile = user.profiles?.find(p => 
+         p.department.toUpperCase() === department.toUpperCase() && 
+         p.status !== 'deleted'
+       );
+
+       if (existingProfile) {
+         return res.status(400).json({ 
+           success: false, 
+           message: "Profile already exists for this department" 
+         });
+       }
+
+       // Normalize confidentiality levels
+       const levels = confidentialityLevels && Array.isArray(confidentialityLevels) 
+         ? confidentialityLevels 
+         : ['public', 'internal'];
+
+       const newProfile = {
+         profileId: new mongoose.Types.ObjectId(),
+         department: department.toUpperCase(),
+         confidentialityLevels: levels,
+         isPrimary: false,
+         status: 'active'
+       };
+
+       user.profiles = [...(user.profiles || []), newProfile];
+       await user.save();
+
+       await AuditLog.create({
+         userId: req.user._id,
+         userEmail: req.user.email,
+         action: 'profile_create',
+         resource: 'user',
+         resourceId: user._id.toString(),
+         details: { 
+           profileId: newProfile.profileId,
+           department: newProfile.department
+         },
+         ipAddress: req.ip
+       });
+
+       logger.info(`[USER:PROFILE:${requestId}] Profile added for user ${user.email}: ${newProfile.department}`);
+
+       res.status(201).json({
+         success: true,
+         data: newProfile
+       });
+     } catch (error) {
+       logger.error(`[USER:PROFILE:${requestId}] Error: ${error.message}`, { stack: error.stack });
+       next(error);
+     }
+   },
+
+   /**
+    * Update a user's profile
+    * PUT /api/v1/users/:id/profiles/:profileId
+    * Access: Admin only
+    */
+   updateProfile: async (req, res, next) => {
+     const requestId = Math.random().toString(36).substring(2, 8);
+     try {
+       const { confidentialityLevels, isPrimary, status } = req.body;
+       const user = await User.findById(req.params.id);
+
+       if (!user) {
+         return res.status(404).json({ success: false, message: "User not found" });
+       }
+
+       const profileIndex = user.profiles?.findIndex(p => 
+         p.profileId.toString() === req.params.profileId
+       );
+
+       if (profileIndex === -1) {
+         return res.status(404).json({ success: false, message: "Profile not found" });
+       }
+
+       const profile = user.profiles[profileIndex];
+
+       // Update fields if provided
+       if (confidentialityLevels !== undefined) {
+         if (!Array.isArray(confidentialityLevels)) {
+           return res.status(400).json({ success: false, message: "confidentialityLevels must be an array" });
+         }
+         profile.confidentialityLevels = confidentialityLevels;
+       }
+
+       if (isPrimary !== undefined) {
+         if (isPrimary) {
+           // Set all other profiles to non-primary
+           user.profiles.forEach(p => {
+             if (p.profileId.toString() !== req.params.profileId) {
+               p.isPrimary = false;
+             }
+           });
+         }
+         profile.isPrimary = Boolean(isPrimary);
+       }
+
+       if (status !== undefined) {
+         if (!['active', 'inactive'].includes(status)) {
+           return res.status(400).json({ success: false, message: "Status must be 'active' or 'inactive'" });
+         }
+         profile.status = status;
+       }
+
+       profile.updatedAt = new Date();
+       await user.save();
+
+       await AuditLog.create({
+         userId: req.user._id,
+         userEmail: req.user.email,
+         action: 'profile_update',
+         resource: 'user',
+         resourceId: user._id.toString(),
+         details: { 
+           profileId: profile.profileId,
+           department: profile.department,
+           changes: { confidentialityLevels, isPrimary, status }
+         },
+         ipAddress: req.ip
+       });
+
+       logger.info(`[USER:PROFILE:${requestId}] Profile updated for user ${user.email}: ${profile.department}`);
+
+       res.json({
+         success: true,
+         data: profile
+       });
+     } catch (error) {
+       logger.error(`[USER:PROFILE:${requestId}] Error: ${error.message}`, { stack: error.stack });
+       next(error);
+     }
+   },
+
+   /**
+    * Remove a user's profile (soft delete)
+    * DELETE /api/v1/users/:id/profiles/:profileId
+    * Access: Admin only
+    */
+   removeProfile: async (req, res, next) => {
+     const requestId = Math.random().toString(36).substring(2, 8);
+     try {
+       const user = await User.findById(req.params.id);
+
+       if (!user) {
+         return res.status(404).json({ success: false, message: "User not found" });
+       }
+
+       const profileIndex = user.profiles?.findIndex(p => 
+         p.profileId.toString() === req.params.profileId
+       );
+
+       if (profileIndex === -1) {
+         return res.status(404).json({ success: false, message: "Profile not found" });
+       }
+
+       const profile = user.profiles[profileIndex];
+
+       // Prevent deleting the last active profile
+       const activeProfiles = user.profiles.filter(p => p.status === 'active');
+       if (activeProfiles.length <= 1) {
+         return res.status(400).json({ 
+           success: false, 
+           message: "Cannot delete the last active profile" 
+         });
+       }
+
+       // Prevent deleting primary profile unless another is set as primary first
+       if (profile.isPrimary) {
+         return res.status(400).json({ 
+           success: false, 
+           message: "Cannot delete primary profile. Set another profile as primary first." 
+         });
+       }
+
+       // Soft delete
+       profile.status = 'deleted';
+       profile.updatedAt = new Date();
+       await user.save();
+
+       await AuditLog.create({
+         userId: req.user._id,
+         userEmail: req.user.email,
+         action: 'profile_delete',
+         resource: 'user',
+         resourceId: user._id.toString(),
+         details: { 
+           profileId: profile.profileId,
+           department: profile.department
+         },
+         ipAddress: req.ip
+       });
+
+       logger.info(`[USER:PROFILE:${requestId}] Profile deleted for user ${user.email}: ${profile.department}`);
+
+       res.json({
+         success: true,
+         message: 'Profile deleted successfully'
+       });
+     } catch (error) {
+       logger.error(`[USER:PROFILE:${requestId}] Error: ${error.message}`, { stack: error.stack });
+       next(error);
+     }
+   },
+
+   /**
+    * Set a profile as primary for a user
+    * POST /api/v1/users/:id/profiles/:profileId/set-primary
+    * Access: Admin only
+    */
+   setPrimaryProfile: async (req, res, next) => {
+     const requestId = Math.random().toString(36).substring(2, 8);
+     try {
+       const user = await User.findById(req.params.id);
+
+       if (!user) {
+         return res.status(404).json({ success: false, message: "User not found" });
+       }
+
+       const profileIndex = user.profiles?.findIndex(p => 
+         p.profileId.toString() === req.params.profileId
+       );
+
+       if (profileIndex === -1) {
+         return res.status(404).json({ success: false, message: "Profile not found" });
+       }
+
+       const profile = user.profiles[profileIndex];
+
+       if (profile.status !== 'active') {
+         return res.status(400).json({ 
+           success: false, 
+           message: "Cannot set inactive profile as primary" 
+         });
+       }
+
+       // Set all profiles to non-primary first
+       user.profiles.forEach(p => {
+         p.isPrimary = false;
+       });
+
+       // Set this profile as primary
+       profile.isPrimary = true;
+       profile.updatedAt = new Date();
+       await user.save();
+
+       await AuditLog.create({
+         userId: req.user._id,
+         userEmail: req.user.email,
+         action: 'profile_set_primary',
+         resource: 'user',
+         resourceId: user._id.toString(),
+         details: { 
+           profileId: profile.profileId,
+           department: profile.department
+         },
+         ipAddress: req.ip
+       });
+
+       logger.info(`[USER:PROFILE:${requestId}] Profile set as primary for user ${user.email}: ${profile.department}`);
+
+       res.json({
+         success: true,
+         data: profile
+       });
+     } catch (error) {
+       logger.error(`[USER:PROFILE:${requestId}] Error: ${error.message}`, { stack: error.stack });
+       next(error);
+     }
+   }
 };
 module.exports = userController;

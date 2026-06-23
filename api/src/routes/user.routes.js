@@ -7,6 +7,7 @@ const { roleMiddleware } = require('../middlewares/roleMiddleware');
 
 router.use(auth);
 
+// Admin only routes
 router.get('/', roleMiddleware('admin', 'hod'), userController.getAllUsers);
 router.get('/:id', roleMiddleware('admin', 'hod'), userController.getUserById);
 
@@ -26,14 +27,26 @@ router.post(
 router.put('/:id', roleMiddleware('admin', 'hod'), userController.updateUser);
 
 router.post('/:id/reset', roleMiddleware('admin'), userController.resetPassword);
-
 router.post('/:id/suspend', roleMiddleware('admin'), userController.suspendUser);
-
 router.post('/:id/restore', roleMiddleware('admin'), userController.restoreUser);
-
 router.post('/:id/delete', roleMiddleware('admin'), userController.deleteUser);
-
 router.post('/:id/activate', roleMiddleware('admin'), userController.activateUser);
+
+// Profile management routes (admin only)
+router.post('/:id/profiles', roleMiddleware('admin'), [
+  body('department').notEmpty().withMessage('Department is required'),
+  body('confidentialityLevels').isArray().optional().withMessage('confidentialityLevels must be an array')
+], userController.addProfile);
+
+router.put('/:id/profiles/:profileId', roleMiddleware('admin'), [
+  body('confidentialityLevels').isArray().optional().withMessage('confidentialityLevels must be an array'),
+  body('isPrimary').isBoolean().optional().withMessage('isPrimary must be a boolean'),
+  body('status').isIn(['active', 'inactive']).optional().withMessage('status must be either active or inactive')
+], userController.updateProfile);
+
+router.delete('/:id/profiles/:profileId', roleMiddleware('admin'), userController.removeProfile);
+
+router.post('/:id/profiles/:profileId/set-primary', roleMiddleware('admin'), userController.setPrimaryProfile);
 
 // HOD request endpoints
 router.post('/:id/request-suspend', roleMiddleware('hod'), userController.requestSuspend);

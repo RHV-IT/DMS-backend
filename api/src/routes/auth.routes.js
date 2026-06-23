@@ -95,6 +95,19 @@ router.get('/me', authController.getProfile);
 router.put('/profile', authController.updateProfile);
 
 /**
+ * @route POST /api/v1/auth/switch-profile
+ * @description Switch active department profile
+ * @access Private
+ */
+router.post(
+  '/switch-profile',
+  [
+    body('profileId').notEmpty().withMessage('Profile ID is required')
+  ],
+  authController.switchProfile
+);
+
+/**
  * @route POST /api/v1/auth/track-login
  * @description Track login for scanner agent (optional, graceful handling)
  * @access Private
