@@ -4,6 +4,7 @@ const Notification = require('../models/Notification');
 const Department = require('../models/Department');
 const { validationResult } = require('express-validator');
 const { sendWelcomeEmail } = require('../services/emailService');
+const logger = require("../config/logger");
 
 const ALLOWED_ROLES = ['admin', 'hod', 'user'];
 const CONFIDENTIALITY_LEVELS = ['public', 'internal', 'confidential', 'highly_confidential'];
