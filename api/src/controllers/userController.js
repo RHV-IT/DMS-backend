@@ -185,15 +185,45 @@ const userController = {
         return res.status(400).json({ success: false, message: deptCheck.error });
       }
 
-      const user = await User.create({
-        name,
-        email,
-        password,
-        department,
-        role: normalizedRole,
-        confidentialityLevels: normalizedConfidentiality.levels,
-        passwordLastChanged: new Date()
-      });
+// Handle departments array for profile creation
+       let finalDepartment = department;
+       let profilesToCreate = [];
+       
+       if (req.body.departments && Array.isArray(req.body.departments)) {
+         // Use the first department as the primary department if departments array is provided
+         if (req.body.departments.length > 0) {
+           finalDepartment = req.body.departments[0];
+         }
+         
+         // Create profiles for each department
+         profilesToCreate = req.body.departments.map((dept, index) => ({
+           profileId: new (require('mongoose')).Types.ObjectId(),
+           department: dept.toUpperCase(),
+           confidentialityLevels: normalizedConfidentiality.levels,
+           isPrimary: (index === 0), // First department is primary
+           status: 'active'
+         }));
+       } else {
+         // Fallback to single department behavior
+         profilesToCreate = [{
+           profileId: new (require('mongoose')).Types.ObjectId(),
+department: department.toUpperCase(),
+            confidentialityLevels: normalizedConfidentiality.levels,
+            isPrimary: true,
+            status: 'active'
+         }];
+       }
+
+       const user = await User.create({
+         name,
+         email,
+         password,
+         department: finalDepartment,
+         role: normalizedRole,
+         confidentialityLevels: normalizedConfidentiality.levels,
+         passwordLastChanged: new Date(),
+         profiles: profilesToCreate
+       });
 
       await user.addToPasswordHistory();
       await user.save();
@@ -237,85 +267,267 @@ const userController = {
       const isAdmin = req.user.role === 'admin';
       const isHod = req.user.role === 'hod';
 
-      const user = await User.findById(req.params.id);
-      if (!user) {
-        return res.status(404).json({ success: false, message: 'User not found' });
-      }
+const user = await User.findById(req.params.id);
+       if (!user) {
+         return res.status(404).json({ success: false, message: 'User not found' });
+       }
 
-      if (isHod && user.department !== req.user.department) {
-        return res.status(403).json({ success: false, message: 'HODs can only manage users in their department' });
-      }
+       // Log incoming data for debugging
+       logger.info(`[USER:UPDATE:${req.params.id}] Received update request with body:`, {
+         name: req.body.name,
+         email: req.body.email,
+         department: req.body.department,
+         departments: req.body.departments,
+         role: req.body.role,
+         status: req.body.status,
+         confidentialityLevels: req.body.confidentialityLevels,
+         confidentialityLevel: req.body.confidentialityLevel
+       });
 
-      if (isHod) {
-        const restrictedUpdate = [
-          'role',
-          'status',
-          'confidentialityLevels',
-          'confidentialityLevel'
-        ].some((field) => Object.prototype.hasOwnProperty.call(req.body, field));
+       if (isHod && user.department !== req.user.department) {
+         return res.status(403).json({ success: false, message: 'HODs can only manage users in their department' });
+       }
 
-        if (restrictedUpdate) {
-          return res.status(403).json({
-            success: false,
-            message: 'Only admins can assign user roles or confidentiality levels'
-          });
-        }
+       if (isHod) {
+         const restrictedUpdate = [
+           'role',
+           'status',
+           'confidentialityLevels',
+           'confidentialityLevel'
+         ].some((field) => Object.prototype.hasOwnProperty.call(req.body, field));
 
-        const nextDepartment = department || user.department;
-        if (nextDepartment !== req.user.department) {
-          return res.status(403).json({ success: false, message: 'HODs cannot move users outside their department' });
-        }
-      }
+         if (restrictedUpdate) {
+           return res.status(403).json({
+             success: false,
+             message: 'Only admins can assign user roles or confidentiality levels'
+           });
+         }
 
-      if (department && department !== user.department) {
-        const deptCheck = await validateDepartment(department);
-        if (!deptCheck.valid) {
-          return res.status(400).json({ success: false, message: deptCheck.error });
-        }
-      }
+         const nextDepartment = department || user.department;
+         if (nextDepartment !== req.user.department) {
+           return res.status(403).json({ success: false, message: 'HODs cannot move users outside their department' });
+         }
+       }
 
-      const oldData = { role: user.role, status: user.status, confidentialityLevels: user.confidentialityLevels };
+// Handle departments array for profile synchronization
+       let profilesToCreate = [];
+       let profilesToDeactivate = [];
+       let finalDepartment = department;
+       
+       // Process departments array if provided
+       if (req.body.departments && Array.isArray(req.body.departments)) {
+         // Filter out empty departments and convert to uppercase
+         const validDepartments = req.body.departments
+           .map(dept => dept.trim())
+           .filter(dept => dept.length > 0)
+           .map(dept => dept.toUpperCase());
+         
+         // If we have departments, use the first one as the primary department for the user.department field
+         if (validDepartments.length > 0) {
+           finalDepartment = validDepartments[0];
+         }
+         
+         // Get current active profiles
+         const currentProfiles = user.profiles || [];
+         const currentDepartmentSet = new Set(currentProfiles
+           .filter(p => p.status === 'active')
+           .map(p => p.department));
+         
+         // Convert new departments to set
+         const newDepartmentSet = new Set(validDepartments);
+         
+         // Departments to add (in new but not in current)
+         const departmentsToAdd = [...newDepartmentSet].filter(dept => !currentDepartmentSet.has(dept));
+         
+         // Departments to remove (in current but not in new)
+         const departmentsToRemove = currentProfiles
+           .filter(p => p.status === 'active' && !newDepartmentSet.has(p.department))
+           .map(p => ({ 
+             profileId: p.profileId,
+             department: p.department 
+           }));
+         
+         // Create profiles for new departments
+         profilesToCreate = departmentsToAdd.map((dept, index) => ({
+           department: dept,
+           confidentialityLevels: req.body.confidentialityLevels && Array.isArray(req.body.confidentialityLevels) 
+             ? req.body.confidentialityLevels 
+             : (user.confidentialityLevels || ['public', 'internal']),
+           isPrimary: false, // Will be set later
+           status: 'active'
+         }));
+         
+         // Profiles to deactivate
+         profilesToDeactivate = departmentsToRemove;
+       } else if (department) {
+         // Handle single department update (legacy behavior)
+         finalDepartment = department;
+       }
+       
+       // Validate all departments
+       if (req.body.departments && Array.isArray(req.body.departments)) {
+         for (const dept of req.body.departments) {
+           if (dept && dept.trim().length > 0) {
+             const deptCheck = await validateDepartment(dept.trim());
+             if (!deptCheck.valid) {
+               return res.status(400).json({ success: false, message: `Invalid department '${dept.trim()}': ${deptCheck.error}` });
+             }
+           }
+         }
+       } else if (department) {
+         const deptCheck = await validateDepartment(department);
+         if (!deptCheck.valid) {
+           return res.status(400).json({ success: false, message: `Invalid department '${department}': ${deptCheck.error}` });
+         }
+       }
+       
+       const oldData = { 
+         role: user.role, 
+         status: user.status, 
+         confidentialityLevels: user.confidentialityLevels,
+         department: user.department
+       };
 
-      if (name) user.name = name;
-      if (email) user.email = email;
-      if (department) user.department = department;
+       // Update basic fields
+       if (name) user.name = name;
+       if (email) user.email = email;
+       if (department) {
+         // Use the processed department value
+         if (user.department !== finalDepartment) {
+           user.department = finalDepartment;
+         }
+       }
 
-      if (isAdmin && Object.prototype.hasOwnProperty.call(req.body, 'role')) {
-        const normalizedRole = normalizeRole(role);
-        if (!normalizedRole) {
-          return res.status(400).json({ success: false, message: 'Role is required (admin, hod, or user)' });
-        }
-        user.role = normalizedRole;
-      }
+       if (isAdmin && Object.prototype.hasOwnProperty.call(req.body, 'role')) {
+         const normalizedRole = normalizeRole(role);
+         if (!normalizedRole) {
+           return res.status(400).json({ success: false, message: 'Role is required (admin, hod, or user)' });
+         }
+         user.role = normalizedRole;
+       }
 
-      if (isAdmin && status) user.status = status;
+       if (isAdmin && status) user.status = status;
 
-      if (isAdmin && (confidentialityLevels || confidentialityLevel)) {
-        const normalizedConfidentiality = normalizeConfidentialityInput({ confidentialityLevels, confidentialityLevel });
-        if (normalizedConfidentiality.error) {
-          return res.status(400).json({ success: false, message: normalizedConfidentiality.error });
-        }
-        user.confidentialityLevels = normalizedConfidentiality.levels;
-      }
+       if (isAdmin && (confidentialityLevels || confidentialityLevel)) {
+         const normalizedConfidentiality = normalizeConfidentialityInput({ confidentialityLevels, confidentialityLevel });
+         if (normalizedConfidentiality.error) {
+           return res.status(400).json({ success: false, message: `Invalid confidentiality level: ${normalizedConfidentiality.error}` });
+         }
+         user.confidentialityLevels = normalizedConfidentiality.levels;
+       }
 
-      user.updatedAt = new Date();
+       // Handle profile synchronization
+       if (req.body.departments && Array.isArray(req.body.departments)) {
+         // Create new profiles for departments that don't exist
+         for (const profileData of profilesToCreate) {
+           // Check if profile already exists (shouldn't happen with our logic, but just in case)
+           const existingProfileIndex = user.profiles.findIndex(p => 
+             p.department === profileData.department && p.status === 'active'
+           );
+           
+           if (existingProfileIndex === -1) {
+             const newProfile = {
+               profileId: new (require('mongoose')).Types.ObjectId(),
+               department: profileData.department,
+               confidentialityLevels: profileData.confidentialityLevels,
+               isProfile: profileData.isProfile,
+               status: profileData.status
+             };
+             
+             user.profiles.push(newProfile);
+           }
+         }
+         
+         // Deactivate profiles for departments that are no longer in the list
+         for (const profileInfo of profilesToDeactivate) {
+           const profileIndex = user.profiles.findIndex(p => 
+             p.profileId.equals(profileInfo.profileId)
+           );
+           if (profileIndex !== -1) {
+             user.profiles[profileIndex].status = 'inactive';
+             user.profiles[profileIndex].updatedAt = new Date();
+           }
+         }
+         
+         // Ensure exactly one primary profile exists among active profiles
+         let primarySet = false;
+         // First, reset all to non-primary
+         for (let i = 0; i < user.profiles.length; i++) {
+           if (user.profiles[i].status === 'active') {
+             user.profiles[i].isPrimary = false;
+           }
+         }
+         
+         // Then set the first active profile from our departments list as primary
+         if (req.body.departments && req.body.departments.length > 0) {
+           const firstDept = req.body.departments[0].trim().toUpperCase();
+           for (let i = 0; i < user.profiles.length; i++) {
+             if (user.profiles[i].status === 'active' && 
+                 user.profiles[i].department === firstDept) {
+               user.profiles[i].isPrimary = true;
+               primarySet = true;
+               break;
+             }
+           }
+         }
+         
+         // If no primary was set (shouldn't happen, but just in case), set the first active profile as primary
+         if (!primarySet) {
+           for (let i = 0; i < user.profiles.length; i++) {
+             if (user.profiles[i].status === 'active') {
+               user.profiles[i].isPrimary = true;
+               primarySet = true;
+               break;
+             }
+           }
+         }
+       } else if (department) {
+         // Handle single department update (legacy behavior)
+         // Update the primary profile's department if it changed
+         if (user.department !== department.toUpperCase()) {
+           const primaryProfileIndex = user.profiles.findIndex(p => 
+             p.isPrimary && p.status === 'active'
+           );
+           if (primaryProfileIndex !== -1) {
+             user.profiles[primaryProfileIndex].department = department.toUpperCase();
+           }
+         }
+       }
 
-      await user.save();
+       user.updatedAt = new Date();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'user_update',
-        resource: 'user',
-        resourceId: user._id.toString(),
-        details: { oldData, newData: { role, status, confidentialityLevels, confidentialityLevel } },
-        ipAddress: req.ip
-      });
+       await user.save();
 
-      res.json({
-        success: true,
-        data: user
-      });
+       await AuditLog.create({
+         userId: req.user._id,
+         userEmail: req.user.email,
+         action: 'user_update',
+         resource: 'user',
+         resourceId: user._id.toString(),
+         details: { 
+           oldData, 
+           newData: { 
+             role: user.role, 
+             status: user.status, 
+             confidentialityLevels: user.confidentialityLevels,
+             department: user.department,
+             departments: user.profiles
+                 .filter(p => p.status === 'active')
+                 .map(p => p.department)
+           } 
+         },
+         ipAddress: req.ip
+       });
+
+       res.json({
+         success: true,
+         data: user
+       });
+
+       res.json({
+         success: true,
+         data: user
+       });
     } catch (error) {
       next(error);
     }

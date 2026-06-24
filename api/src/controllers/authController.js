@@ -7,6 +7,34 @@ const { createAuditLog } = require("../middlewares/auditMiddleware");
 const { userOperations } = require("../utils/databaseUtils");
 const logger = require("../config/logger");
 
+// Helper function to normalize confidentiality level values
+const normalizeConfidentialityValue = (value) => {
+  const CONFIDENTIALITY_LEVELS = ['public', 'internal', 'confidential', 'highly_confidential'];
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (CONFIDENTIALITY_LEVELS.includes(normalized)) {
+    return normalized;
+  }
+
+  if (normalized.includes('high')) {
+    return 'highly_confidential';
+  }
+
+  if (normalized.includes('conf')) {
+    return 'confidential';
+  }
+
+  if (normalized.includes('int')) {
+    return 'internal';
+  }
+
+  if (normalized === 'public') {
+    return 'public';
+  }
+
+  return null;
+};
+
 const authController = {
   /**
    * User Registration
@@ -19,7 +47,7 @@ const authController = {
         return res.status(400).json({ success: false, errors: errors.array() });
       }
 
-      const { name, email, password, department } = req.body;
+      const { name, email, password, department, departments, confidentialityLevel } = req.body;
 
       const existingUser = await userOperations.findOne({ email });
 
@@ -33,23 +61,57 @@ const authController = {
         return res.status(400).json({ success: false, message: "User already exists" });
       }
 
-      const user = await User.create({
-        name,
-        email,
-        password,
-        department,
-        role: "user",
-        confidentialityLevels: ['public', 'internal'],
-        // singular deprecated - never set to avoid frontend conflict
-        passwordLastChanged: new Date(),
-        profiles: [{
-          profileId: new (require('mongoose')).Types.ObjectId(),
-          department: department.toUpperCase(),
-          confidentialityLevels: ['public', 'internal'],
-          isPrimary: true,
-          status: 'active'
-        }]
-      });
+// Handle departments array for profile creation
+       let profilesToCreate = [];
+       let finalDepartment = department;
+       
+       // Determine confidentiality levels
+       let confidentialityLevels = ['public', 'internal']; // Default
+       if (confidentialityLevel) {
+         const normalizedLevel = normalizeConfidentialityValue(confidentialityLevel);
+         if (normalizedLevel) {
+           const levels = ['public', 'internal', 'confidential', 'highly_confidential'];
+           const index = levels.indexOf(normalizedLevel);
+           confidentialityLevels = levels.slice(0, index + 1);
+         }
+       }
+       
+       if (req.body.departments && Array.isArray(req.body.departments)) {
+         // Use the first department as the primary department if departments array is provided
+         if (req.body.departments.length > 0) {
+           finalDepartment = req.body.departments[0];
+         }
+         
+         // Create profiles for each department
+         profilesToCreate = req.body.departments.map((dept, index) => ({
+           profileId: new (require('mongoose')).Types.ObjectId(),
+           department: dept.toUpperCase(),
+           confidentialityLevels: confidentialityLevels,
+           isPrimary: (index === 0), // First department is primary
+           status: 'active'
+         }));
+       } else {
+         // Fallback to single department behavior
+         profilesToCreate = [{
+           profileId: new (require('mongoose')).Types.ObjectId(),
+           department: department.toUpperCase(),
+           confidentialityLevels: confidentialityLevels,
+           isPrimary: true,
+           status: 'active'
+         }];
+       }
+
+       const user = await User.create({
+         name,
+         email,
+         password,
+         department: finalDepartment,
+         role: "user",
+         confidentialityLevels: confidentialityLevels,
+         // singular deprecated - never set to avoid frontend conflict
+         passwordLastChanged: new Date(),
+         profiles: profilesToCreate
+       });
 
       // Use primary profile for token generation
       const activeProfile = user.getPrimaryProfile();
@@ -211,8 +273,9 @@ const authController = {
         return res.status(401).json({ success: false, message: "Invalid email or password" });
       }
 
-      // Generate tokens
-      const accessToken = authService.generateAccessToken(user, rememberMe);
+// Generate tokens
+       const activeProfile = user.getPrimaryProfile();
+       const accessToken = authService.generateAccessToken(user, rememberMe, activeProfile);
       const refreshToken = authService.generateRefreshToken(user);
 
       // Store refresh token in database (this invalidates any previous refresh tokens)

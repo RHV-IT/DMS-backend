@@ -80,70 +80,51 @@ const seedDepartments = async () => {
 };
 
 const seedSuperAdmin = async () => {
-  const existingAdmin = await User.findOne({ email: 'admin@dms.com' });
-  if (existingAdmin) {
-    console.log('✓ Super Admin already exists');
-    return;
-  }
+   const existingAdmin = await User.findOne({ email: 'admin@dms.com' });
+   if (existingAdmin) {
+     console.log('✓ Super Admin already exists');
+     return;
+   }
 
-  // Hash the password manually since we're not using pre-save
-  const hashedPassword = await bcrypt.hash('Admin@123', 12);
+   // Hash the password manually since we're not using pre-save
+   const hashedPassword = await bcrypt.hash('Admin@123', 12);
 
-  const admin = await User.create({
-    name: 'System Administration',
-    email: 'admin@dms.com',
-    password: hashedPassword,
-    role: 'admin',
-    department: 'INFORMATION TECHNOLOGY',
-    status: 'active',
-    confidentialityLevels: ['public', 'internal', 'confidential', 'highly_confidential'],
-    passwordLastChanged: new Date()
-  });
+   const admin = await User.create({
+     name: 'System Administration',
+     email: 'admin@dms.com',
+     password: hashedPassword,
+     role: 'admin',
+     department: 'INFORMATION TECHNOLOGY',
+     status: 'active',
+     confidentialityLevels: ['public', 'internal', 'confidential', 'highly_confidential'],
+     passwordLastChanged: new Date(),
+     profiles: [
+       {
+         profileId: new (require('mongoose')).Types.ObjectId(),
+         department: 'INFORMATION TECHNOLOGY',
+         confidentialityLevels: ['public', 'internal', 'confidential', 'highly_confidential'],
+         isPrimary: true,
+         status: 'active'
+       },
+       {
+         profileId: new (require('mongoose')).Types.ObjectId(),
+         department: 'HUMAN RESOURCES',
+         confidentialityLevels: ['public', 'internal', 'confidential'],
+         isPrimary: false,
+         status: 'active'
+       },
+       {
+         profileId: new (require('mongoose')).Types.ObjectId(),
+         department: 'FINANCE',
+         confidentialityLevels: ['public', 'internal'],
+         isPrimary: false,
+         status: 'active'
+       }
+     ]
+   });
 
-  console.log('✓ Super Admin created');
-
-  // Seed roles
-  const roles = [
-    {
-      name: 'admin',
-      permissions: [
-        'file:upload', 'file:download', 'file:delete', 'file:share', 'file:update', 'file:read',
-        'user:create', 'user:read', 'user:update', 'user:delete',
-        'role:assign', 'permission:override',
-        'logs:read', 'logs:export',
-        'notification:read', 'notification:manage',
-        'scanner:manage', 'archive:manage', 'audit:manage'
-      ]
-    },
-    {
-      name: 'hod',
-      permissions: [
-        'file:upload', 'file:download', 'file:delete', 'file:share', 'file:update', 'file:read',
-        'user:read', 'user:update',
-        'logs:read',
-        'notification:read', 'notification:manage'
-      ]
-    },
-    {
-      name: 'user',
-      permissions: [
-        'file:upload', 'file:download', 'file:read',
-        'file:share',
-        'notification:read'
-      ]
-    }
-  ];
-
-  for (const roleData of roles) {
-    await Role.findOneAndUpdate(
-      { name: roleData.name },
-      roleData,
-      { upsert: true }
-    );
-  }
-
-  console.log('✓ Roles seeded');
-};
+   console.log('✓ Super Admin created with profiles');
+ };
 
 const runSeed = async () => {
   const mongoUri = process.env.MONGODB_URI;

@@ -4,7 +4,7 @@ const AuditLog = require("../models/AuditLog");
 const logger = require("../config/logger");
 
 class AuthService {
-  /**
+/**
    * Generate Access Token
    * Short-lived token for API authentication
    *
@@ -19,7 +19,7 @@ class AuthService {
     // Use active profile data if available, otherwise fall back to user's legacy fields
     const department = activeProfile?.department || user.department;
     const confidentialityLevels = activeProfile?.confidentialityLevels || user.confidentialityLevels || ['public', 'internal'];
-    const profileId = activeProfile?.profileId ? activeProfile.profileId.toString() : null;
+    const profileId = activeProfile ? activeProfile.profileId ? activeProfile.profileId.toString() : null : null;
 
     const token = jwt.sign(
       {
@@ -204,37 +204,30 @@ class AuthService {
       throw new Error("Account deleted");
     }
 
-    // Generate new access token
-    // Try to get active profile from the decoded token, or use primary profile
-    let activeProfile = null;
-    if (decoded.profileId) {
-      // Get the specific profile from user
-      activeProfile = user.profiles?.find(p => p.profileId.toString() === decoded.profileId);
-    } else {
-      // Use primary profile
-      activeProfile = user.getPrimaryProfile();
-    }
-    
-    const newAccessToken = this.generateAccessToken(user, false, activeProfile);
-    logger.debug(`[AUTH-SERVICE:${requestId}] Token refresh successful for ${user.email}`);
+// Generate new access token
+  // Get active profile from user
+  const activeProfile = this.getActiveProfileFromUser(user);
+  const newAccessToken = this.generateAccessToken(user, false, activeProfile);
+  logger.debug(`[AUTH-SERVICE:${requestId}] Token refresh successful for ${user.email}`);
 
-    return {
-      accessToken: newAccessToken,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        department: activeProfile?.department || user.department,
-        profileId: activeProfile?.profileId ? activeProfile.profileId.toString() : null,
-        confidentialityLevels: activeProfile?.confidentialityLevels || user.confidentialityLevels,
-        confidentialityLevel: activeProfile ? activeProfile.confidentialityLevels.sort((a, b) => {
+  return {
+    accessToken: newAccessToken,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      department: activeProfile?.department || user.department,
+      profileId: activeProfile?.profileId ? activeProfile.profileId.toString() : null,
+      confidentialityLevels: activeProfile?.confidentialityLevels || user.confidentialityLevels,
+      confidentialityLevel: activeProfile ? 
+        activeProfile.confidentialityLevels.sort((a, b) => {
           const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
           return (ranks[b] || 0) - (ranks[a] || 0);
         })[0] : user.getConfidentialityLevel(),
-      },
-      requestId,
-    };
+    },
+    requestId,
+  };
   }
 
   /**
@@ -262,6 +255,17 @@ class AuthService {
     const lastChanged = user.passwordLastChanged || user.createdAt;
     const diffDays = Math.floor((Date.now() - new Date(lastChanged).getTime()) / (1000 * 60 * 60 * 24));
     return diffDays >= expireDays;
+  }
+
+  /**
+   * Get active profile from user (from JWT or primary)
+   * @param {Object} user - User object
+   * @returns {Object|null} Active profile or null
+   */
+  getActiveProfileFromUser(user) {
+    // This would normally come from the decoded JWT, but for refresh
+    // we'll use the primary profile as the active one
+    return user.getPrimaryProfile();
   }
 }
 
