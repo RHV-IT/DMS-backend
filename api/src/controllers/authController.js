@@ -306,8 +306,8 @@ const authController = {
       // Set the new token cookie
       res.cookie("token", accessToken, cookieConfig);
 
-      // Get active profile (primary or first active)
-      const activeProfile = user.getPrimaryProfile();
+// Get active profile (primary or first active)
+       // const activeProfile = user.getPrimaryProfile(); // REMOVED - already declared above
 
       const isFirstLogin = user.loginCount === 1;
       const agentRequired = true; // Scanner agent is always required for this system
