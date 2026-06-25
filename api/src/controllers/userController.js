@@ -74,7 +74,13 @@ const normalizeConfidentialityInput = ({ confidentialityLevels, confidentialityL
 
 const validateDepartment = async (departmentName) => {
   if (!departmentName) return { valid: false, error: 'Department is required' };
-  const dept = await Department.findOne({ name: departmentName.trim().toUpperCase(), isActive: true });
+  const trimmedDept = departmentName.trim().toUpperCase();
+  const dept = await Department.findOne({ 
+    $or: [
+      { name: trimmedDept, isActive: true },
+      { code: trimmedDept, isActive: true }
+    ]
+  });
   if (!dept) return { valid: false, error: 'Department does not exist or is inactive' };
   return { valid: true, department: dept };
 };
