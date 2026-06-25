@@ -382,13 +382,27 @@ const user = await User.findById(req.params.id);
            }
          }
        } else if (department) {
-         const deptCheck = await validateDepartment(department);
-         if (!deptCheck.valid) {
-           return res.status(400).json({ success: false, message: `Invalid department '${department}': ${deptCheck.error}` });
-         }
-       }
-       
-       const oldData = { 
+const deptCheck = await validateDepartment(department);
+          if (!deptCheck.valid) {
+            return res.status(400).json({ success: false, message: `Invalid department '${department}': ${deptCheck.error}` });
+          }
+        }
+        
+        // Prevent deactivating all active profiles
+        if (profilesToDeactivate.length > 0) {
+          const activeProfilesNow = user.profiles.filter(p => p.status === 'active');
+          const profilesToDeactivateSet = new Set(profilesToDeactivate.map(p => p.profileId));
+          const activeProfilesAfter = activeProfilesNow.filter(p => !profilesToDeactivateSet.has(p.profileId));
+          if (activeProfilesAfter.length === 0) {
+            return res.status(400).json({ 
+              success: false, 
+              message: "Cannot deactivate all active profiles" 
+            });
+          }
+        }
+
+
+        const oldData = {
          role: user.role, 
          status: user.status, 
          confidentialityLevels: user.confidentialityLevels,
@@ -450,10 +464,10 @@ const user = await User.findById(req.params.id);
            const profileIndex = user.profiles.findIndex(p => 
              p.profileId.equals(profileInfo.profileId)
            );
-           if (profileIndex !== -1) {
-             user.profiles[profileIndex].status = 'inactive';
-             user.profiles[profileIndex].updatedAt = new Date();
-           }
+if (profileIndex !== -1) {
+              user.profiles[profileIndex].status = 'inactive';
+              user.profiles[profileIndex].updatedAt = new Date();
+            }
          }
          
          // Ensure exactly one primary profile exists among active profiles
@@ -1043,47 +1057,43 @@ res.json({ success: true, message: 'Password reset request sent to admins' });
 
        const profile = user.profiles[profileIndex];
 
-       // Prevent deleting the last active profile
-       const activeProfiles = user.profiles.filter(p => p.status === 'active');
-       if (activeProfiles.length <= 1) {
-         return res.status(400).json({ 
-           success: false, 
-           message: "Cannot delete the last active profile" 
-         });
-       }
+// Prevent deactivating the last active profile
+        if (profile.status === 'active') {
+          const activeProfiles = user.profiles.filter(p => p.status === 'active');
+          if (activeProfiles.length <= 1) {
+            return res.status(400).json({ 
+              success: false, 
+              message: "Cannot deactivate the last active profile" 
+            });
+          }
+        }
 
-       // Prevent deleting primary profile unless another is set as primary first
-       if (profile.isPrimary) {
-         return res.status(400).json({ 
-           success: false, 
-           message: "Cannot delete primary profile. Set another profile as primary first." 
-         });
-       }
 
-       // Soft delete
-       profile.status = 'deleted';
-       profile.updatedAt = new Date();
+
+// Soft delete
+        profile.status = 'inactive';
+        profile.updatedAt = new Date();
        await user.save();
 
-       await AuditLog.create({
-         userId: req.user._id,
-         userEmail: req.user.email,
-         action: 'profile_delete',
-         resource: 'user',
-         resourceId: user._id.toString(),
-         details: { 
-           profileId: profile.profileId,
-           department: profile.department
-         },
-         ipAddress: req.ip
-       });
+await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'profile_deactivate',
+          resource: 'user',
+          resourceId: user._id.toString(),
+          details: { 
+            profileId: profile.profileId,
+            department: profile.department
+          },
+          ipAddress: req.ip
+        });
 
-       logger.info(`[USER:PROFILE:${requestId}] Profile deleted for user ${user.email}: ${profile.department}`);
+logger.info(`[USER:PROFILE:${requestId}] Profile deactivated for user ${user.email}: ${profile.department}`);
 
-       res.json({
-         success: true,
-         message: 'Profile deleted successfully'
-       });
+        res.json({
+          success: true,
+          message: 'Profile deactivated successfully'
+        });
      } catch (error) {
        logger.error(`[USER:PROFILE:${requestId}] Error: ${error.message}`, { stack: error.stack });
        next(error);
