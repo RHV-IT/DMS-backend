@@ -630,9 +630,14 @@ const user = await User.create({
             name: user.name,
             email: user.email,
             role: user.role,
-            department: user.department,
-            confidentialityLevels: user.confidentialityLevels,
-            confidentialityLevel: user.getConfidentialityLevel(),
+            department: profile.department,
+            confidentialityLevels: profile.confidentialityLevels,
+            confidentialityLevel: profile.confidentialityLevels ? 
+              profile.confidentialityLevels.sort((a, b) => {
+                const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+                return (ranks[b] || 0) - (ranks[a] || 0);
+              })[0] : 'public',
+            profileId: profile.profileId,
           },
           profiles: (user.profiles || []).filter(p => p.status === 'active').map(p => ({
             profileId: p.profileId,

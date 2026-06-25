@@ -148,11 +148,15 @@ const auth = async (req, res, next) => {
     // No automatic confidentiality normalization happens during login.
 
     // Attach user data to request for downstream use
-    // Include profile info from JWT (for multi-profile support)
+    // Resolve active profile from JWT profileId — never fall back to user.department (legacy)
+    const activeProfile = user.profileId
+      ? user.getProfileById(user.profileId)
+      : user.getPrimaryProfile();
+
     req.user = user;
-    req.user.profileId = decoded.profileId || null;
-    req.user.department = decoded.department || user.department;
-    req.user.confidentialityLevels = decoded.confidentialityLevels || user.confidentialityLevels || ['public', 'internal'];
+    req.user.profileId = decoded.profileId || activeProfile?.profileId || null;
+    req.user.department = activeProfile?.department || decoded.department || user.department;
+    req.user.confidentialityLevels = activeProfile?.confidentialityLevels || decoded.confidentialityLevels || user.confidentialityLevels || ['public', 'internal'];
     req.token = token;
     req.tokenRememberMe = decoded.rememberMe;
     req.requestId = requestId;
