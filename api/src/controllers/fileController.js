@@ -4,6 +4,7 @@ const Permission = require('../models/Permission');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
+const Folder = require('../models/Folder');
 const { canViewFile, canUploadLevel, buildFileAccessQuery, canUserAccessFile, canUserAccessFileContents, canUserManageFile, filterAccessibleFiles } = require('../utils/accessControl');
 const { FILE_CATEGORIES, FILE_TYPE_GROUPS, FILE_EXTENSION_GROUPS } = require('../constants');
 const path = require('path');
@@ -16,6 +17,30 @@ const UPLOAD_PATH = process.env.UPLOAD_PATH || (process.env.VERCEL ? '/tmp' : pa
 const CONFIDENTIALITY_LEVELS = ['public', 'internal', 'confidential', 'highly_confidential'];
 
 const getLevelIndex = (level) => CONFIDENTIALITY_LEVELS.indexOf(level);
+
+const _resolveFileConfidentiality = (explicitLevel, folderConfidentiality) => {
+  const LEVEL_RANK = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+
+  if (explicitLevel) {
+    const normalized = String(explicitLevel).toLowerCase().trim();
+    let resolved;
+    if (normalized.includes('high')) resolved = 'highly_confidential';
+    else if (normalized.includes('conf')) resolved = 'confidential';
+    else if (normalized.includes('int')) resolved = 'internal';
+    else resolved = 'public';
+
+    if (folderConfidentiality && LEVEL_RANK[resolved] < LEVEL_RANK[folderConfidentiality]) {
+      return folderConfidentiality;
+    }
+    return resolved;
+  }
+
+  if (folderConfidentiality) {
+    return folderConfidentiality;
+  }
+
+  return 'internal';
+};
 
 const getFileCategory = (originalName, mimeType) => {
   const extension = path.extname(originalName || '').toLowerCase().replace('.', '');
@@ -76,40 +101,48 @@ const fileController = {
         return res.status(400).json({ success: false, message: 'No file uploaded' });
       }
 
-      const { alias, tags, confidentialityLevel } = req.body;
-      const user = req.user;
+       const { alias, tags, confidentialityLevel, folderId } = req.body;
+       const user = req.user;
 
-      let fileLevel = confidentialityLevel || 'internal';
-      // normalize
-      const normalized = String(fileLevel).toLowerCase().trim();
-      if (normalized.includes('high')) fileLevel = 'highly_confidential';
-      else if (normalized.includes('conf')) fileLevel = 'confidential';
-      else if (normalized.includes('int')) fileLevel = 'internal';
-      else fileLevel = 'public';
+       let targetFolderId = null;
+       let folderConfidentiality = null;
+       if (folderId) {
+         const folder = await Folder.findById(folderId);
+         if (!folder) {
+           return res.status(404).json({ success: false, message: 'Folder not found' });
+         }
+         if (user.role !== 'admin' && folder.department !== user.department) {
+           return res.status(403).json({ success: false, message: 'Cannot upload to folder in another department' });
+         }
+         targetFolderId = folder._id;
+         folderConfidentiality = folder.confidentialityLevel;
+       }
 
-      if (!canUploadLevel(user, fileLevel)) {
-        // Audit denied upload attempt
-        await AuditLog.create({
-          userId: user._id,
-          userEmail: user.email,
-          action: 'restricted_access_attempt',
-          resource: 'file',
-          details: {
-            action: 'upload_denied',
-            attemptedLevel: fileLevel,
-            userLevel: user.getConfidentialityLevel(),
-            department: user.department
-          },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
-        });
-        return res.status(403).json({
-          success: false,
-          message: 'You are not authorized to upload files with this confidentiality level.'
-        });
-      }
+       const fileLevel = _resolveFileConfidentiality(confidentialityLevel, folderConfidentiality);
 
-      // Upload to blob to eliminate local path dependency
+       if (!canUploadLevel(user, fileLevel)) {
+         // Audit denied upload attempt
+         await AuditLog.create({
+           userId: user._id,
+           userEmail: user.email,
+           action: 'restricted_access_attempt',
+           resource: 'file',
+           details: {
+             action: 'upload_denied',
+             attemptedLevel: fileLevel,
+             userLevel: user.getConfidentialityLevel(),
+             department: user.department
+           },
+           ipAddress: req.ip,
+           userAgent: req.get('user-agent')
+         });
+         return res.status(403).json({
+           success: false,
+           message: 'You are not authorized to upload files with this confidentiality level.'
+         });
+       }
+
+       // Upload to blob to eliminate local path dependency
       let storageLocation = req.file.filename;
       try {
         const { put } = require('@vercel/blob');
@@ -126,29 +159,30 @@ const fileController = {
         console.warn('[UPLOAD] Blob upload failed, local fallback:', e.message);
       }
 
-      const file = await File.create({
-        name: req.file.originalname,
-        originalFileName: req.file.originalname,
-        alias: alias || req.file.originalname,
-        type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
-        fileCategory: getFileCategory(req.file.originalname, req.file.mimetype),
-        size: req.file.size,
-        owner: user._id,
-        uploadedBy: user._id,
-        profileId: user.profileId || null,
-        department: user.department,
-        uploadedByDepartment: user.department,
-        uploadedByConfidentiality: user.confidentialityLevels ? 
-          user.confidentialityLevels.sort((a, b) => {
-            const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
-            return (ranks[b] || 0) - (ranks[a] || 0);
-          })[0] : 'internal',
-        tags: tags ? tags.split(',').map(t => t.trim()) : [],
-        confidentialityLevel: fileLevel,
-        mimeType: req.file.mimetype || 'application/octet-stream',
-        isScanned: false,
-        storagePath: storageLocation
-      });
+       const file = await File.create({
+         name: req.file.originalname,
+         originalFileName: req.file.originalname,
+         alias: alias || req.file.originalname,
+         type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
+         fileCategory: getFileCategory(req.file.originalname, req.file.mimetype),
+         size: req.file.size,
+         owner: user._id,
+         uploadedBy: user._id,
+         profileId: user.profileId || null,
+         department: user.department,
+         uploadedByDepartment: user.department,
+         uploadedByConfidentiality: user.confidentialityLevels ? 
+           user.confidentialityLevels.sort((a, b) => {
+             const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+             return (ranks[b] || 0) - (ranks[a] || 0);
+           })[0] : 'internal',
+         tags: tags ? tags.split(',').map(t => t.trim()) : [],
+         confidentialityLevel: fileLevel,
+         mimeType: req.file.mimetype || 'application/octet-stream',
+         isScanned: false,
+         storagePath: storageLocation,
+         folderId: targetFolderId
+       });
 
       await FileVersion.create({
         fileId: file._id,
@@ -185,21 +219,36 @@ const fileController = {
         return res.status(400).json({ success: false, message: 'No files uploaded' });
       }
 
-      const user = req.user;
+       const user = req.user;
 
-      // Support per-file metadata[] (JSON strings) mapped by index to files[]
-      // Also fallback to single confidentialityLevel for all if no metadata
-      let metadataArray = [];
-      if (req.body.metadata) {
-        const rawMeta = Array.isArray(req.body.metadata) ? req.body.metadata : [req.body.metadata];
-        metadataArray = rawMeta.map(m => {
-          if (typeof m === 'string') {
-            try { return JSON.parse(m); } catch { return {}; }
-          }
-          return m || {};
-        });
-      }
-      const globalLevel = req.body.confidentialityLevel || 'internal';
+       // Support per-file metadata[] (JSON strings) mapped by index to files[]
+       // Also fallback to single confidentialityLevel for all if no metadata
+       let metadataArray = [];
+       if (req.body.metadata) {
+         const rawMeta = Array.isArray(req.body.metadata) ? req.body.metadata : [req.body.metadata];
+         metadataArray = rawMeta.map(m => {
+           if (typeof m === 'string') {
+             try { return JSON.parse(m); } catch { return {}; }
+           }
+           return m || {};
+         });
+       }
+       const globalLevel = req.body.confidentialityLevel;
+       const folderId = req.body.folderId;
+
+       let targetFolderId = null;
+       let folderConfidentiality = null;
+       if (folderId) {
+         const folder = await Folder.findById(folderId);
+         if (!folder) {
+           return res.status(404).json({ success: false, message: 'Folder not found' });
+         }
+         if (user.role !== 'admin' && folder.department !== user.department) {
+           return res.status(403).json({ success: false, message: 'Cannot upload to folder in another department' });
+         }
+         targetFolderId = folder._id;
+         folderConfidentiality = folder.confidentialityLevel;
+       }
 
       const files = [];
       const errors = [];
@@ -208,14 +257,10 @@ const fileController = {
         const file = req.files[i];
         const meta = metadataArray[i] || {};
         const alias = meta.alias || file.originalname;
-        let fileLevel = meta.confidentialityLevel || globalLevel || 'internal';
-
-        // Normalize level to enum values
-        const normalized = String(fileLevel).toLowerCase().trim();
-        if (normalized.includes('high')) fileLevel = 'highly_confidential';
-        else if (normalized.includes('conf')) fileLevel = 'confidential';
-        else if (normalized.includes('int')) fileLevel = 'internal';
-        else fileLevel = 'public';
+        const fileLevel = _resolveFileConfidentiality(
+          meta.confidentialityLevel || globalLevel,
+          folderConfidentiality
+        );
 
         if (!canUploadLevel(user, fileLevel)) {
           errors.push(`File ${file.originalname}: confidentiality level ${fileLevel} not allowed for user`);
@@ -255,27 +300,28 @@ const fileController = {
           storageLocation = file.filename; // fallback, may 404 in prod without disk persist
         }
 
-        const newFile = await File.create({
-          name: file.originalname,
-          originalFileName: file.originalname,
-          alias: alias,
-          type: path.extname(file.originalname).toLowerCase().replace('.', ''),
-          fileCategory: getFileCategory(file.originalname, file.mimetype),
-          size: file.size,
-          owner: user._id,
-          uploadedBy: user._id,
-          profileId: user.profileId || null,
-          department: user.department,
-          uploadedByDepartment: user.department,
-          uploadedByConfidentiality: user.confidentialityLevels ? 
-            user.confidentialityLevels.sort((a, b) => {
-              const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
-              return (ranks[b] || 0) - (ranks[a] || 0);
-            })[0] : 'internal',
-          confidentialityLevel: fileLevel,
-          mimeType: file.mimetype || 'application/octet-stream',
-          storagePath: storageLocation
-        });
+         const newFile = await File.create({
+           name: file.originalname,
+           originalFileName: file.originalname,
+           alias: alias,
+           type: path.extname(file.originalname).toLowerCase().replace('.', ''),
+           fileCategory: getFileCategory(file.originalname, file.mimetype),
+           size: file.size,
+           owner: user._id,
+           uploadedBy: user._id,
+           profileId: user.profileId || null,
+           department: user.department,
+           uploadedByDepartment: user.department,
+           uploadedByConfidentiality: user.confidentialityLevels ? 
+             user.confidentialityLevels.sort((a, b) => {
+               const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+               return (ranks[b] || 0) - (ranks[a] || 0);
+             })[0] : 'internal',
+           confidentialityLevel: fileLevel,
+           mimeType: file.mimetype || 'application/octet-stream',
+           storagePath: storageLocation,
+           folderId: targetFolderId
+         });
 
         await FileVersion.create({
           fileId: newFile._id,
@@ -1135,30 +1181,38 @@ const fileController = {
         return res.status(400).json({ success: false, message: 'No file uploaded' });
       }
 
-      const { alias, tags, confidentialityLevel, uploadSource } = req.body;
-      const user = req.user;
+       const { alias, tags, confidentialityLevel, uploadSource, folderId } = req.body;
+       const user = req.user;
 
-      let fileLevel = confidentialityLevel || 'internal';
+       let targetFolderId = null;
+       let folderConfidentiality = null;
+       if (folderId) {
+         const folder = await Folder.findById(folderId);
+         if (!folder) {
+           return res.status(404).json({ success: false, message: 'Folder not found' });
+         }
+         if (user.role !== 'admin' && folder.department !== user.department) {
+           return res.status(403).json({ success: false, message: 'Cannot upload to folder in another department' });
+         }
+         targetFolderId = folder._id;
+         folderConfidentiality = folder.confidentialityLevel;
+       }
 
-      const normalized = String(fileLevel).toLowerCase().trim();
-      if (normalized.includes('high')) fileLevel = 'highly_confidential';
-      else if (normalized.includes('conf')) fileLevel = 'confidential';
-      else if (normalized.includes('int')) fileLevel = 'internal';
-      else fileLevel = 'public';
-      
-      if (!canUploadLevel(user, fileLevel)) {
-        await AuditLog.create({
-          userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
-          resource: 'file', details: { action: 'scanned_upload_denied', attemptedLevel: fileLevel },
-          ipAddress: req.ip
-        });
-        return res.status(403).json({ 
-          success: false, 
-          message: 'You are not authorized to upload files with this confidentiality level.' 
-        });
-      }
+       const fileLevel = _resolveFileConfidentiality(confidentialityLevel, folderConfidentiality);
+       
+       if (!canUploadLevel(user, fileLevel)) {
+         await AuditLog.create({
+           userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
+           resource: 'file', details: { action: 'scanned_upload_denied', attemptedLevel: fileLevel },
+           ipAddress: req.ip
+         });
+         return res.status(403).json({ 
+           success: false, 
+           message: 'You are not authorized to upload files with this confidentiality level.' 
+         });
+       }
 
-      const source = uploadSource || 'scanner';
+       const source = uploadSource || 'scanner';
       const isScannedDoc = ['pdf', 'jpg', 'jpeg', 'png', 'tiff', 'bmp'].includes(
         path.extname(req.file.originalname).toLowerCase().replace('.', '')
       );
@@ -1180,31 +1234,32 @@ const fileController = {
         console.warn('[SCANNED UPLOAD] Blob fallback:', e.message);
       }
 
-      const file = await File.create({
-        name: req.file.originalname,
-        originalFileName: req.file.originalname,
-        alias: alias || req.file.originalname,
-        type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
-        fileCategory: getFileCategory(req.file.originalname, req.file.mimetype),
-        size: req.file.size,
-        owner: user._id,
-        uploadedBy: user._id,
-        profileId: user.profileId || null,
-        department: user.department,
-        uploadedByDepartment: user.department,
-        uploadedByConfidentiality: user.confidentialityLevels ? 
-          user.confidentialityLevels.sort((a, b) => {
-            const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
-            return (ranks[b] || 0) - (ranks[a] || 0);
-          })[0] : 'internal',
-        tags: tags ? tags.split(',').map(t => t.trim()) : [],
-        confidentialityLevel: fileLevel,
-        mimeType: req.file.mimetype || 'application/octet-stream',
-        isScanned: isScannedDoc,
-        uploadSource: source,
-        storagePath: storageLocation,
-        ocrStatus: 'pending'
-      });
+       const file = await File.create({
+         name: req.file.originalname,
+         originalFileName: req.file.originalname,
+         alias: alias || req.file.originalname,
+         type: path.extname(req.file.originalname).toLowerCase().replace('.', ''),
+         fileCategory: getFileCategory(req.file.originalname, req.file.mimetype),
+         size: req.file.size,
+         owner: user._id,
+         uploadedBy: user._id,
+         profileId: user.profileId || null,
+         department: user.department,
+         uploadedByDepartment: user.department,
+         uploadedByConfidentiality: user.confidentialityLevels ? 
+           user.confidentialityLevels.sort((a, b) => {
+             const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+             return (ranks[b] || 0) - (ranks[a] || 0);
+           })[0] : 'internal',
+         tags: tags ? tags.split(',').map(t => t.trim()) : [],
+         confidentialityLevel: fileLevel,
+         mimeType: req.file.mimetype || 'application/octet-stream',
+         isScanned: isScannedDoc,
+         uploadSource: source,
+         storagePath: storageLocation,
+         folderId: targetFolderId,
+         ocrStatus: 'pending'
+       });
 
       await FileVersion.create({
         fileId: file._id,
@@ -1241,11 +1296,25 @@ const fileController = {
         return res.status(400).json({ success: false, message: 'No files uploaded' });
       }
 
-      const { uploadSource } = req.body;
-      const user = req.user;
-      const source = uploadSource || 'scanner';
-      const files = [];
-      const errors = [];
+         const { uploadSource, folderId, confidentialityLevel } = req.body;
+         const user = req.user;
+         const source = uploadSource || 'scanner';
+         const files = [];
+         const errors = [];
+
+         let targetFolderId = null;
+         let folderConfidentiality = null;
+         if (folderId) {
+           const folder = await Folder.findById(folderId);
+           if (!folder) {
+             return res.status(404).json({ success: false, message: 'Folder not found' });
+           }
+           if (user.role !== 'admin' && folder.department !== user.department) {
+             return res.status(403).json({ success: false, message: 'Cannot upload to folder in another department' });
+           }
+           targetFolderId = folder._id;
+           folderConfidentiality = folder.confidentialityLevel;
+         }
 
       for (let i = 0; i < req.files.length; i++) {
         const file = req.files[i];
@@ -1270,37 +1339,38 @@ const fileController = {
           console.warn('[SCANNED BULK] Blob fallback:', e.message);
         }
 
-        const fileLevel = 'internal';
-        if (!canUploadLevel(user, fileLevel)) {
+         const fileLevel = _resolveFileConfidentiality(confidentialityLevel, folderConfidentiality);
+         if (!canUploadLevel(user, fileLevel)) {
           errors.push(`File ${file.originalname}: internal level not allowed`);
           await AuditLog.create({ userId: user._id, userEmail: user.email, action: 'restricted_access_attempt', resource: 'file', details: {action:'scanned_bulk_denied', fileName: file.originalname}, ipAddress: req.ip });
           continue;
         }
 
-        const newFile = await File.create({
-          name: file.originalname,
-          originalFileName: file.originalname,
-          alias: file.originalname,
-          type: path.extname(file.originalname).toLowerCase().replace('.', ''),
-          fileCategory: getFileCategory(file.originalname, file.mimetype),
-          size: file.size,
-          owner: user._id,
-          uploadedBy: user._id,
-          profileId: user.profileId || null,
-          department: user.department,
-          uploadedByDepartment: user.department,
-          uploadedByConfidentiality: user.confidentialityLevels ? 
-            user.confidentialityLevels.sort((a, b) => {
-              const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
-              return (ranks[b] || 0) - (ranks[a] || 0);
-            })[0] : 'internal',
-          confidentialityLevel: fileLevel,
-          mimeType: file.mimetype || 'application/octet-stream',
-          isScanned: isScannedDoc,
-          uploadSource: source,
-          storagePath: storageLocation,
-          ocrStatus: 'pending'
-        });
+         const newFile = await File.create({
+           name: file.originalname,
+           originalFileName: file.originalname,
+           alias: file.originalname,
+           type: path.extname(file.originalname).toLowerCase().replace('.', ''),
+           fileCategory: getFileCategory(file.originalname, file.mimetype),
+           size: file.size,
+           owner: user._id,
+           uploadedBy: user._id,
+           profileId: user.profileId || null,
+           department: user.department,
+           uploadedByDepartment: user.department,
+           uploadedByConfidentiality: user.confidentialityLevels ? 
+             user.confidentialityLevels.sort((a, b) => {
+               const ranks = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+               return (ranks[b] || 0) - (ranks[a] || 0);
+             })[0] : 'internal',
+           confidentialityLevel: fileLevel,
+           mimeType: file.mimetype || 'application/octet-stream',
+           isScanned: isScannedDoc,
+           uploadSource: source,
+           storagePath: storageLocation,
+           folderId: targetFolderId,
+           ocrStatus: 'pending'
+         });
 
         await FileVersion.create({
           fileId: newFile._id,

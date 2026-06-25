@@ -203,6 +203,23 @@ function canConfidentialityLevelAccess(userLevel, fileLevel) {
   return u >= f;
 }
 
+function canViewFolder(user, folder) {
+  if (!user || !folder) return false;
+  if (user.role === 'admin') return true;
+  if (folder.department !== user.department) return false;
+
+  const userLevels = Array.isArray(user.confidentialityLevels) ? user.confidentialityLevels : [];
+  return userLevels.includes(folder.confidentialityLevel) || folder.confidentialityLevel === 'public';
+}
+
+function canManageFolder(user, folder) {
+  if (!user || !folder) return false;
+  if (user.role === 'admin') return true;
+  if (folder.isSystemFolder) return false;
+  if (folder.department !== user.department) return false;
+  return folder.createdBy && folder.createdBy.toString() === user._id.toString();
+}
+
 module.exports = {
   CONFIDENTIALITY_LEVELS,
   LEVEL_ORDER,
@@ -210,6 +227,8 @@ module.exports = {
   canViewFile,
   canUploadLevel,
   buildFileAccessQuery,
+  canViewFolder,
+  canManageFolder,
   // legacy names for existing code (now strict)
   canUserAccessFile,
   canUserAccessFileContents,

@@ -91,6 +91,11 @@ const fileSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  folderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Folder',
+    default: null
+  },
   isDeleted: {
     type: Boolean,
     default: false
@@ -121,5 +126,9 @@ const fileSchema = new mongoose.Schema({
 fileSchema.pre('save', function() {
   this.updatedAt = new Date();
 });
+
+fileSchema.index({ folderId: 1 });
+fileSchema.index({ department: 1, createdAt: -1 });
+fileSchema.index({ confidentialityLevel: 1 });
 
 module.exports = mongoose.model('File', fileSchema);

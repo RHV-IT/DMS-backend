@@ -25,6 +25,8 @@ const srcSettingsRoutes = require("./src/routes/settings.routes");
 const srcPendingScanRoutes = require("./src/routes/pendingScan.routes");
 const srcConfigRoutes = require("./src/routes/config.routes");
 const srcDepartmentRoutes = require("./src/routes/department.routes");
+const srcFolderRoutes = require("./src/routes/folder.routes");
+const { startArchiveScheduler } = require("./src/services/archiveScheduler");
 //database connection - using Mongoose for consistency with models
 const connectDB = require("./src/config/database");
 
@@ -152,6 +154,12 @@ app.use('/api/v1/config', srcConfigRoutes);
 
 console.log("Mounted department routes");
 app.use('/api/v1/departments', srcDepartmentRoutes);
+
+console.log("Mounted folder routes");
+app.use('/api/v1/folders', srcFolderRoutes);
+
+// Start archive scheduler (non-blocking)
+startArchiveScheduler();
 
 // TEST ROUTE for debugging
 app.get("/test", (req, res) => {

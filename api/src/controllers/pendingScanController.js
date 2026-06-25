@@ -3,6 +3,7 @@ const FileVersion = require('../models/FileVersion');
 const PendingScan = require('../models/PendingScan');
 const AuditLog = require('../models/AuditLog');
 const Permission = require('../models/Permission');
+const Folder = require('../models/Folder');
 const { canUploadLevel } = require('../utils/accessControl');
 const DeviceInfoExtractor = require('../utils/deviceInfo');
 const path = require('path');
@@ -321,7 +322,7 @@ const scannerController = {
    */
   confirmPendingScan: async (req, res, next) => {
     try {
-      const { id, alias, confidentialityLevel = 'internal', description, format = 'pdf', tags } = req.body;
+       const { id, alias, confidentialityLevel, description, format = 'pdf', tags, folderId } = req.body;
       const user = req.user;
 
       console.log('[DEBUG] confirmPendingScan called, id:', id);
@@ -462,16 +463,47 @@ const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('..
       }
 
       // Step 3: Create File record (always store blob url or filename in storagePath)
-      if (!canUploadLevel(user, confidentialityLevel)) {
-        await AuditLog.create({
-          userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
-          resource: 'file', details: { action: 'pending_confirm_denied', attemptedLevel: confidentialityLevel },
-          ipAddress: req.ip
-        });
-        return res.status(403).json({ success: false, message: 'You are not authorized to upload files with this confidentiality level.' });
-      }
+       let targetFolderId = null;
+       let folderConfidentiality = null;
+       if (folderId) {
+         const folder = await Folder.findById(folderId);
+         if (!folder) {
+           return res.status(404).json({ success: false, message: 'Folder not found' });
+         }
+         if (user.role !== 'admin' && folder.department !== user.department) {
+           return res.status(403).json({ success: false, message: 'Cannot upload to folder in another department' });
+         }
+         targetFolderId = folder._id;
+         folderConfidentiality = folder.confidentialityLevel;
+       }
 
-      const file = await File.create({
+       const LEVEL_RANK = { public: 1, internal: 2, confidential: 3, highly_confidential: 4 };
+       let resolvedLevel = confidentialityLevel || null;
+       if (resolvedLevel) {
+         const normalized = String(resolvedLevel).toLowerCase().trim();
+         if (normalized.includes('high')) resolvedLevel = 'highly_confidential';
+         else if (normalized.includes('conf')) resolvedLevel = 'confidential';
+         else if (normalized.includes('int')) resolvedLevel = 'internal';
+         else resolvedLevel = 'public';
+       }
+       if (!resolvedLevel && folderConfidentiality) {
+         resolvedLevel = folderConfidentiality;
+       }
+       if (resolvedLevel && folderConfidentiality && LEVEL_RANK[resolvedLevel] < LEVEL_RANK[folderConfidentiality]) {
+         resolvedLevel = folderConfidentiality;
+       }
+       if (!resolvedLevel) resolvedLevel = 'internal';
+
+       if (!canUploadLevel(user, resolvedLevel)) {
+         await AuditLog.create({
+           userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
+           resource: 'file', details: { action: 'pending_confirm_denied', attemptedLevel: resolvedLevel },
+           ipAddress: req.ip
+         });
+         return res.status(403).json({ success: false, message: 'You are not authorized to upload files with this confidentiality level.' });
+       }
+
+       const file = await File.create({
         name: pendingScan.originalName,
         originalFileName: pendingScan.originalName,
         alias: alias || pendingScan.originalName,
@@ -489,13 +521,14 @@ const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('..
             return (ranks[b] || 0) - (ranks[a] || 0);
           })[0] : 'internal',
         tags: tags ? tags.split(',').map(t => t.trim()) : [],
-        confidentialityLevel: confidentialityLevel,
+         confidentialityLevel: resolvedLevel,
         mimeType: mimeType || 'application/octet-stream',
         isScanned: true,
         uploadSource: 'scanner',
-        storagePath: storagePathOrUrl,
-        description: description || undefined
-      });
+         storagePath: storagePathOrUrl,
+         folderId: targetFolderId,
+         description: description || undefined
+       });
 
       // Step 4: Create FileVersion
       await FileVersion.create({
