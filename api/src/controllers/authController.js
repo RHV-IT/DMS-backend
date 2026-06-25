@@ -101,7 +101,7 @@ const authController = {
          }];
        }
 
-       const user = await User.create({
+const user = await User.create({
          name,
          email,
          password,
@@ -111,6 +111,77 @@ const authController = {
          // singular deprecated - never set to avoid frontend conflict
          passwordLastChanged: new Date(),
          profiles: profilesToCreate
+       });
+
+       // Use primary profile for token generation
+       const activeProfile = user.getPrimaryProfile();
+       const accessToken = authService.generateAccessToken(user, false, activeProfile);
+       const refreshToken = authService.generateRefreshToken(user);
+
+       // Store refresh token in database
+       user.refreshToken = refreshToken;
+       await user.save();
+
+       await user.addToPasswordHistory();
+
+       const deviceInfo = req.deviceInfo || DeviceInfoExtractor.extractFromRequest(req);
+       const summary = `${user.name} registered from ${deviceInfo.machine?.machineName || deviceInfo.device?.deviceName || "Unknown Device"}`;
+
+       await AuditLog.create({
+         ...deviceInfo,
+         userId: user._id,
+         userEmail: user.email,
+         action: "login",
+         resource: "auth",
+         details: { method: "registration" },
+         summary,
+       });
+
+       const cookieConfig = authService.getCookieConfig();
+
+       // FIX: Set cookie using the SAME config as the cookie parser expects
+       res.cookie("token", accessToken, cookieConfig);
+
+       logger.info(`[AUTH:REGISTER] New user registered: ${email}`);
+
+       console.log('USER PROFILES FROM DB', user.profiles);
+       console.log('REGISTER RESPONSE PROFILES', (user.profiles || []).map(p => ({
+         profileId: p.profileId,
+         department: p.department,
+         confidentialityLevels: p.confidentialityLevels,
+         isPrimary: p.isPrimary,
+         status: p.status
+       })));
+
+       res.status(201).json({
+         success: true,
+         data: {
+           user: {
+             id: user._id,
+             name: user.name,
+             email: user.email,
+             role: user.role,
+             department: user.department,
+             confidentialityLevels: user.confidentialityLevels,
+             confidentialityLevel: user.getConfidentialityLevel(),
+           },
+           profiles: (user.profiles || []).map(p => ({
+             profileId: p.profileId,
+             department: p.department,
+             confidentialityLevels: p.confidentialityLevels,
+             isPrimary: p.isPrimary,
+             status: p.status
+           })),
+           activeProfile: activeProfile ? {
+             profileId: activeProfile.profileId,
+             department: activeProfile.department,
+             confidentialityLevels: activeProfile.confidentialityLevels,
+             isPrimary: activeProfile.isPrimary
+           } : null,
+           accessToken,
+           refreshToken,
+           rememberMe: false,
+         },
        });
 
       // Use primary profile for token generation
@@ -144,7 +215,7 @@ const authController = {
 
       logger.info(`[AUTH:REGISTER] New user registered: ${email}`);
 
-      res.status(201).json({
+res.status(201).json({
         success: true,
         data: {
           user: {
@@ -156,7 +227,7 @@ const authController = {
             confidentialityLevels: user.confidentialityLevels,
             confidentialityLevel: user.getConfidentialityLevel(),
           },
-          profiles: (user.profiles || []).filter(p => p.status === 'active').map(p => ({
+          profiles: (user.profiles || []).map(p => ({
             profileId: p.profileId,
             department: p.department,
             confidentialityLevels: p.confidentialityLevels,
@@ -314,6 +385,15 @@ const authController = {
       const agentConnected = user.agentConnected || false;
       const mustDownloadAgent = !agentConnected; // If not connected, must download
 
+      console.log('USER PROFILES FROM DB', user.profiles);
+      console.log('LOGIN RESPONSE PROFILES', (user.profiles || []).map(p => ({
+        profileId: p.profileId,
+        department: p.department,
+        confidentialityLevels: p.confidentialityLevels,
+        isPrimary: p.isPrimary,
+        status: p.status
+      })));
+
       res.json({
         success: true,
         data: {
@@ -328,7 +408,7 @@ const authController = {
             loginCount: user.loginCount,
             passwordExpired,
           },
-          profiles: (user.profiles || []).filter(p => p.status === 'active').map(p => ({
+          profiles: (user.profiles || []).map(p => ({
             profileId: p.profileId,
             department: p.department,
             confidentialityLevels: p.confidentialityLevels,
@@ -606,11 +686,32 @@ const authController = {
 
       res.json({
         success: true,
-        activeProfile: {
-          profileId: profile.profileId,
-          department: profile.department,
-          confidentialityLevels: profile.confidentialityLevels,
-          isPrimary: profile.isPrimary
+        data: {
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            department: user.department,
+            confidentialityLevels: user.confidentialityLevels,
+            confidentialityLevel: user.getConfidentialityLevel(),
+          },
+          profiles: (user.profiles || []).filter(p => p.status === 'active').map(p => ({
+            profileId: p.profileId,
+            department: p.department,
+            confidentialityLevels: p.confidentialityLevels,
+            isPrimary: p.isPrimary,
+            status: p.status
+          })),
+          activeProfile: {
+            profileId: profile.profileId,
+            department: profile.department,
+            confidentialityLevels: profile.confidentialityLevels,
+            isPrimary: profile.isPrimary
+          },
+          accessToken,
+          refreshToken,
+          rememberMe: user.rememberMe
         }
       });
     } catch (error) {
