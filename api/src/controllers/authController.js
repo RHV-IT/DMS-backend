@@ -113,7 +113,7 @@ const user = await User.create({
          profiles: profilesToCreate
        });
 
-       // Use primary profile for token generation
+// Use primary profile for token generation
        const activeProfile = user.getPrimaryProfile();
        const accessToken = authService.generateAccessToken(user, false, activeProfile);
        const refreshToken = authService.generateRefreshToken(user);
@@ -183,68 +183,6 @@ const user = await User.create({
            rememberMe: false,
          },
        });
-
-      // Use primary profile for token generation
-      const activeProfile = user.getPrimaryProfile();
-      const accessToken = authService.generateAccessToken(user, false, activeProfile);
-      const refreshToken = authService.generateRefreshToken(user);
-
-      // Store refresh token in database
-      user.refreshToken = refreshToken;
-      await user.save();
-
-      await user.addToPasswordHistory();
-
-      const deviceInfo = req.deviceInfo || DeviceInfoExtractor.extractFromRequest(req);
-      const summary = `${user.name} registered from ${deviceInfo.machine?.machineName || deviceInfo.device?.deviceName || "Unknown Device"}`;
-
-      await AuditLog.create({
-        ...deviceInfo,
-        userId: user._id,
-        userEmail: user.email,
-        action: "login",
-        resource: "auth",
-        details: { method: "registration" },
-        summary,
-      });
-
-      const cookieConfig = authService.getCookieConfig();
-
-      // FIX: Set cookie using the SAME config as the cookie parser expects
-      res.cookie("token", accessToken, cookieConfig);
-
-      logger.info(`[AUTH:REGISTER] New user registered: ${email}`);
-
-res.status(201).json({
-        success: true,
-        data: {
-          user: {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            department: user.department,
-            confidentialityLevels: user.confidentialityLevels,
-            confidentialityLevel: user.getConfidentialityLevel(),
-          },
-          profiles: (user.profiles || []).map(p => ({
-            profileId: p.profileId,
-            department: p.department,
-            confidentialityLevels: p.confidentialityLevels,
-            isPrimary: p.isPrimary,
-            status: p.status
-          })),
-          activeProfile: activeProfile ? {
-            profileId: activeProfile.profileId,
-            department: activeProfile.department,
-            confidentialityLevels: activeProfile.confidentialityLevels,
-            isPrimary: activeProfile.isPrimary
-          } : null,
-          accessToken,
-          refreshToken,
-          rememberMe: false,
-        },
-      });
     } catch (error) {
       next(error);
     }
