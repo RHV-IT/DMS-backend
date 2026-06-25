@@ -184,6 +184,7 @@ const startArchiveScheduler = () => {
     return;
   }
 
+  const rawTz = (process.env.TZ || 'UTC').replace(/^:/, '');
   dailyCheckTask = cron.schedule('59 23 * * *', async () => {
     const now = new Date();
     console.log(`[ARCHIVE] Daily archive check at ${now.toISOString()}`);
@@ -202,7 +203,7 @@ const startArchiveScheduler = () => {
       console.error('[ARCHIVE] Error in daily check:', err.message);
     }
   }, {
-    timezone: process.env.TZ || 'UTC'
+    timezone: rawTz
   });
 
   console.log('[ARCHIVE] Archive scheduler started - runs daily at 23:59');
