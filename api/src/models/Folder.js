@@ -67,9 +67,8 @@ const folderSchema = new mongoose.Schema({
   }
 });
 
-folderSchema.pre('save', function(next) {
+folderSchema.pre('save', function() {
   this.updatedAt = new Date();
-  next();
 });
 
 folderSchema.index({ parentFolderId: 1 });
