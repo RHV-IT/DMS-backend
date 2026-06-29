@@ -75,7 +75,6 @@ folderSchema.pre('save', function(next) {
 folderSchema.index({ parentFolderId: 1 });
 folderSchema.index({ department: 1 });
 folderSchema.index({ createdBy: 1 });
-folderSchema.index({ name: 1, parentFolderId: 1, department: 1 }, { unique: true });
 folderSchema.index({ isSystemFolder: 1 });
 folderSchema.index({ path: 1 });
 folderSchema.index({ createdAt: -1 });
