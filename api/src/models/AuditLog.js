@@ -37,7 +37,20 @@ const auditLogSchema = new mongoose.Schema({
       'session_expired',
       'archive_view',
       'restricted_access_attempt',
-      'admin_sensitive_access'
+      'admin_sensitive_access',
+      'create_folder',
+      'rename_folder',
+      'update_folder',
+      'delete_folder',
+      'restore_folder',
+      'move_folder',
+      'copy_folder',
+      'move_file',
+      'copy_file',
+      'bulk_move_file',
+      'bulk_delete_folder',
+      'bulk_delete_file',
+      'archive'
     ]
   },
   resource: {
