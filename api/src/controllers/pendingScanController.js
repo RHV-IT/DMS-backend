@@ -495,11 +495,15 @@ const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('..
        if (!resolvedLevel) resolvedLevel = 'internal';
 
        if (!canUploadLevel(user, resolvedLevel)) {
-         await AuditLog.create({
-           userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
-           resource: 'file', details: { action: 'pending_confirm_denied', attemptedLevel: resolvedLevel },
-           ipAddress: req.ip
-         });
+         try {
+           await AuditLog.create({
+             userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
+             resource: 'file', details: { action: 'pending_confirm_denied', attemptedLevel: resolvedLevel },
+             ipAddress: req.ip
+           });
+         } catch (auditError) {
+           console.error('Failed to write audit log for pending_confirm_denied:', auditError.message);
+         }
          return res.status(403).json({ success: false, message: 'You are not authorized to upload files with this confidentiality level.' });
        }
 
@@ -551,25 +555,29 @@ const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('..
       const deviceInfo = DeviceInfoExtractor.extractFromRequest(req);
       const summary = `${user.name} confirmed ${file.name} from ${pendingScan.machineMetadata?.machineName || 'Scanner'} (Scanner Agent)`;
 
-      await AuditLog.create({
-        ...deviceInfo,
-        userId: user._id,
-        userEmail: user.email,
-        action: 'upload',
-        resource: 'file',
-        resourceId: file.fileId,
-        details: {
-          fileName: file.name,
-          size: file.size,
-          format: finalFormat,
-          convertedFrom: path.extname(pendingScan.originalName).toLowerCase().replace('.', ''),
-          uploadSource: 'scanner_confirmed',
-          machineId: pendingScan.machineId,
-          fileFingerprint: pendingScan.fileFingerprint,
-          originalPendingScanId: pendingScan.id
-        },
-        summary
-      });
+      try {
+        await AuditLog.create({
+          ...deviceInfo,
+          userId: user._id,
+          userEmail: user.email,
+          action: 'upload',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: {
+            fileName: file.name,
+            size: file.size,
+            format: finalFormat,
+            convertedFrom: path.extname(pendingScan.originalName).toLowerCase().replace('.', ''),
+            uploadSource: 'scanner_confirmed',
+            machineId: pendingScan.machineId,
+            fileFingerprint: pendingScan.fileFingerprint,
+            originalPendingScanId: pendingScan.id
+          },
+          summary
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for upload (scanner_confirmed):', auditError.message);
+      }
 
       try {
         const sources = [sourceFilePath, pendingScan.filePath, pendingScan.permanentFileUrl].filter(Boolean);
@@ -682,22 +690,26 @@ const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('..
       const deviceInfo = DeviceInfoExtractor.extractFromRequest(req);
       const summary = `${user.name} cancelled ${pendingScan.originalName} from ${pendingScan.machineMetadata?.machineName || 'Scanner'}`;
 
-      await AuditLog.create({
-        ...deviceInfo,
-        userId: user._id,
-        userEmail: user.email,
-        action: 'cancel',
-        resource: 'pending_scan',
-        resourceId: pendingScan.id,
-        details: {
-          fileName: pendingScan.originalName,
-          action: 'cancelled',
-          reason: reason || 'User cancelled',
-          machineId: pendingScan.machineId,
-          fileFingerprint: pendingScan.fileFingerprint
-        },
-        summary
-      });
+      try {
+        await AuditLog.create({
+          ...deviceInfo,
+          userId: user._id,
+          userEmail: user.email,
+          action: 'cancel',
+          resource: 'pending_scan',
+          resourceId: pendingScan.id,
+          details: {
+            fileName: pendingScan.originalName,
+            action: 'cancelled',
+            reason: reason || 'User cancelled',
+            machineId: pendingScan.machineId,
+            fileFingerprint: pendingScan.fileFingerprint
+          },
+          summary
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for cancel:', auditError.message);
+      }
 
       res.json({
         success: true,
@@ -771,23 +783,27 @@ const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('..
       });
 
       // Audit log
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'delete',
-        resource: 'pending_scan',
-        resourceId: id,
-        details: {
-          fileName: pendingScan.originalName,
-          action: 'cancelled',
-          reason: reason || 'User cancelled',
-          machineId: pendingScan.machineId,
-          fileFingerprint: pendingScan.fileFingerprint
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-        ...req.auditEnhancement // Include machine, location, scanner data
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'delete',
+          resource: 'pending_scan',
+          resourceId: id,
+          details: {
+            fileName: pendingScan.originalName,
+            action: 'cancelled',
+            reason: reason || 'User cancelled',
+            machineId: pendingScan.machineId,
+            fileFingerprint: pendingScan.fileFingerprint
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent'),
+          ...req.auditEnhancement // Include machine, location, scanner data
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for pending_scan delete:', auditError.message);
+      }
 
       res.json({
         success: true,
@@ -845,16 +861,20 @@ const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('..
       // Delete PendingScan record
       await pendingScan.deleteOne();
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'permanent_delete',
-        resource: 'pending_scan',
-        resourceId: id,
-        details: { fileName: pendingScan.originalName },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'permanent_delete',
+          resource: 'pending_scan',
+          resourceId: id,
+          details: { fileName: pendingScan.originalName },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for permanent_delete (pending_scan):', auditError.message);
+      }
 
       res.json({
         success: true,

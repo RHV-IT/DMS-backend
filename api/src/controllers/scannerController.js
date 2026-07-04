@@ -163,11 +163,15 @@ const scannerController = {
         else fileLevel = 'public';
 
         if (user && !canUploadLevel(user, fileLevel)) {
-          await AuditLog.create({
-            userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
-            resource: 'file', details: { action: 'scanner_upload_denied', attemptedLevel: fileLevel },
-            ipAddress: req.ip
-          });
+          try {
+            await AuditLog.create({
+              userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
+              resource: 'file', details: { action: 'scanner_upload_denied', attemptedLevel: fileLevel },
+              ipAddress: req.ip
+            });
+          } catch (auditError) {
+            console.error('Failed to write audit log for scanner_upload_denied:', auditError.message);
+          }
           return res.status(403).json({ success: false, message: 'You are not authorized to upload files with this confidentiality level.' });
         }
 
@@ -208,22 +212,26 @@ const scannerController = {
 
 
       if (user) {
-        await AuditLog.create({
-          userId: user._id,
-          userEmail: user.email,
-          action: 'upload',
-          resource: 'file',
-          resourceId: file.fileId,
-          details: { 
-            fileName: file.name, 
-            size: file.size, 
-            department,
-            uploadedBy: uploadedBy || req.body.uploadedBy,
-            uploadSource: 'scanner'
-          },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
-        });
+        try {
+          await AuditLog.create({
+            userId: user._id,
+            userEmail: user.email,
+            action: 'upload',
+            resource: 'file',
+            resourceId: file.fileId,
+            details: {
+              fileName: file.name,
+              size: file.size,
+              department,
+              uploadedBy: uploadedBy || req.body.uploadedBy,
+              uploadSource: 'scanner'
+            },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for upload (scanner):', auditError.message);
+        }
       }
 
       const fileUrl = `${req.protocol}://${req.get('host')}/api/v1/files/${file.fileId}`;
@@ -274,11 +282,15 @@ const scannerController = {
       else fileLevel = 'public';
 
       if (req.user && !canUploadLevel(req.user, fileLevel)) {
-        await AuditLog.create({
-          userId: req.user._id, userEmail: req.user.email, action: 'restricted_access_attempt',
-          resource: 'file', details: { action: 'scanner_simple_denied', attemptedLevel: fileLevel },
-          ipAddress: req.ip
-        });
+        try {
+          await AuditLog.create({
+            userId: req.user._id, userEmail: req.user.email, action: 'restricted_access_attempt',
+            resource: 'file', details: { action: 'scanner_simple_denied', attemptedLevel: fileLevel },
+            ipAddress: req.ip
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for scanner_simple_denied:', auditError.message);
+        }
         return res.status(403).json({ success: false, message: 'You are not authorized to upload files with this confidentiality level.' });
       }
 
@@ -334,22 +346,26 @@ const scannerController = {
       console.log(`[SCANNER NOTIFY] New file detected: ${fileName} on ${machineName} (checksum: ${checksum})`);
 
       // Log the notification
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'scanner_notify',
-        resource: 'file',
-        resourceId: null,
-        details: {
-          fileName,
-          checksum,
-          machineName,
-          machineId,
-          action: 'file_detected'
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'scanner_notify',
+          resource: 'file',
+          resourceId: null,
+          details: {
+            fileName,
+            checksum,
+            machineName,
+            machineId,
+            action: 'file_detected'
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for scanner_notify:', auditError.message);
+      }
 
       // For beginner-safe behavior, always keep files initially
       // TODO: Add logic to reject based on:

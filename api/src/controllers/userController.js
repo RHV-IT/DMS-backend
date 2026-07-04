@@ -241,15 +241,19 @@ department: department.toUpperCase(),
         password: password
       });
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'user_create',
-        resource: 'user',
-        resourceId: user._id.toString(),
-        details: { createdUser: user.email, role: user.role },
-        ipAddress: req.ip
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'user_create',
+          resource: 'user',
+          resourceId: user._id.toString(),
+          details: { createdUser: user.email, role: user.role },
+          ipAddress: req.ip
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_create:', auditError.message);
+      }
 
       res.status(201).json({
         success: true,
@@ -470,26 +474,30 @@ department: department.toUpperCase(),
 
       await user.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'user_update',
-        resource: 'user',
-        resourceId: user._id.toString(),
-        details: {
-          oldData,
-          newData: {
-            role: user.role,
-            status: user.status,
-            confidentialityLevels: user.confidentialityLevels,
-            department: user.department,
-            departments: user.profiles
-              .filter(p => p.status === 'active')
-              .map(p => p.department)
-          }
-        },
-        ipAddress: req.ip
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'user_update',
+          resource: 'user',
+          resourceId: user._id.toString(),
+          details: {
+            oldData,
+            newData: {
+              role: user.role,
+              status: user.status,
+              confidentialityLevels: user.confidentialityLevels,
+              department: user.department,
+              departments: user.profiles
+                .filter(p => p.status === 'active')
+                .map(p => p.department)
+            }
+          },
+          ipAddress: req.ip
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_update:', auditError.message);
+      }
 
       res.json({
         success: true,
@@ -514,14 +522,18 @@ department: department.toUpperCase(),
       user.status = 'suspended';
       await user.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'user_suspend',
-        resource: 'user',
-        resourceId: user._id.toString(),
-        details: { suspendedUser: user.email }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'user_suspend',
+          resource: 'user',
+          resourceId: user._id.toString(),
+          details: { suspendedUser: user.email }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_suspend:', auditError.message);
+      }
 
       res.json({ success: true, message: 'User suspended successfully' });
     } catch (error) {
@@ -539,14 +551,18 @@ department: department.toUpperCase(),
       user.status = 'active';
       await user.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'user_restore',
-        resource: 'user',
-        resourceId: user._id.toString(),
-        details: { restoredUser: user.email }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'user_restore',
+          resource: 'user',
+          resourceId: user._id.toString(),
+          details: { restoredUser: user.email }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_restore:', auditError.message);
+      }
 
       res.json({ success: true, message: 'User restored successfully' });
     } catch (error) {
@@ -579,14 +595,18 @@ department: department.toUpperCase(),
       user.passwordLastChanged = new Date();
       await user.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'user_update',
-        resource: 'password',
-        resourceId: user._id.toString(),
-        details: { action: 'password_reset' }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'user_update',
+          resource: 'password',
+          resourceId: user._id.toString(),
+          details: { action: 'password_reset' }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for password_reset:', auditError.message);
+      }
 
       res.json({ success: true, message: 'Password reset successfully' });
     } catch (error) {
@@ -610,14 +630,18 @@ department: department.toUpperCase(),
       user.email = `deleted_${user._id}_${user.email}`;
       await user.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'user_delete',
-        resource: 'user',
-        resourceId: user._id.toString(),
-        details: { deletedUserEmail: user.email }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'user_delete',
+          resource: 'user',
+          resourceId: user._id.toString(),
+          details: { deletedUserEmail: user.email }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_delete:', auditError.message);
+      }
 
       res.json({ success: true, message: 'User deleted successfully' });
     } catch (error) {
@@ -636,14 +660,18 @@ department: department.toUpperCase(),
       user.updatedAt = new Date();
       await user.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'user_activate',
-        resource: 'user',
-        resourceId: user._id.toString(),
-        details: { activatedUser: user.email }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'user_activate',
+          resource: 'user',
+          resourceId: user._id.toString(),
+          details: { activatedUser: user.email }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_activate:', auditError.message);
+      }
 
       res.json({ success: true, message: 'User activated successfully' });
     } catch (error) {
@@ -690,15 +718,19 @@ department: department.toUpperCase(),
         });
       }
 
-      await AuditLog.create({
-        userId: hod._id,
-        userEmail: hod.email,
-        action: 'user_request_suspend',
-        resource: 'user',
-        resourceId: targetUserId,
-        details: { targetUserId, requestedBy: hod._id },
-        ipAddress: req.ip
-      });
+      try {
+        await AuditLog.create({
+          userId: hod._id,
+          userEmail: hod.email,
+          action: 'user_request_suspend',
+          resource: 'user',
+          resourceId: targetUserId,
+          details: { targetUserId, requestedBy: hod._id },
+          ipAddress: req.ip
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_request_suspend:', auditError.message);
+      }
 
       res.json({ success: true, message: 'Suspension request sent to admins' });
     } catch (error) {
@@ -721,6 +753,8 @@ department: department.toUpperCase(),
       if (targetUser.role === 'admin') {
         return res.status(400).json({ success: false, message: 'Cannot request action on admin user' });
       }
+
+      const updates = req.body;
 
       // Prevent hod from requesting changes to role, status, confidentialityLevels, confidentialityLevel
       const restrictedFields = ['role', 'status', 'confidentialityLevels', 'confidentialityLevel'];
@@ -756,15 +790,19 @@ department: department.toUpperCase(),
         });
       }
 
-      await AuditLog.create({
-        userId: hod._id,
-        userEmail: hod.email,
-        action: 'user_request_edit',
-        resource: 'user',
-        resourceId: targetUserId,
-        details: { targetUserId, requestedBy: hod._id, changes: updates },
-        ipAddress: req.ip
-      });
+      try {
+        await AuditLog.create({
+          userId: hod._id,
+          userEmail: hod.email,
+          action: 'user_request_edit',
+          resource: 'user',
+          resourceId: targetUserId,
+          details: { targetUserId, requestedBy: hod._id, changes: updates },
+          ipAddress: req.ip
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_request_edit:', auditError.message);
+      }
 
       res.json({ success: true, message: 'Edit request sent to admins' });
     } catch (error) {
@@ -809,15 +847,19 @@ department: department.toUpperCase(),
         });
       }
 
-      await AuditLog.create({
-        userId: hod._id,
-        userEmail: hod.email,
-        action: 'user_request_password_reset',
-        resource: 'user',
-        resourceId: targetUserId,
-        details: { targetUserId, requestedBy: hod._id },
-        ipAddress: req.ip
-      });
+      try {
+        await AuditLog.create({
+          userId: hod._id,
+          userEmail: hod.email,
+          action: 'user_request_password_reset',
+          resource: 'user',
+          resourceId: targetUserId,
+          details: { targetUserId, requestedBy: hod._id },
+          ipAddress: req.ip
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for user_request_password_reset:', auditError.message);
+      }
 
 res.json({ success: true, message: 'Password reset request sent to admins' });
      } catch (error) {
@@ -863,7 +905,7 @@ res.json({ success: true, message: 'Password reset request sent to admins' });
          : ['public', 'internal'];
 
        const newProfile = {
-         profileId: new mongoose.Types.ObjectId(),
+         profileId: new (require('mongoose')).Types.ObjectId(),
          department: department.toUpperCase(),
          confidentialityLevels: levels,
          isPrimary: false,
@@ -873,18 +915,22 @@ res.json({ success: true, message: 'Password reset request sent to admins' });
        user.profiles = [...(user.profiles || []), newProfile];
        await user.save();
 
-       await AuditLog.create({
-         userId: req.user._id,
-         userEmail: req.user.email,
-         action: 'profile_create',
-         resource: 'user',
-         resourceId: user._id.toString(),
-         details: { 
-           profileId: newProfile.profileId,
-           department: newProfile.department
-         },
-         ipAddress: req.ip
-       });
+       try {
+         await AuditLog.create({
+           userId: req.user._id,
+           userEmail: req.user.email,
+           action: 'profile_create',
+           resource: 'user',
+           resourceId: user._id.toString(),
+           details: {
+             profileId: newProfile.profileId,
+             department: newProfile.department
+           },
+           ipAddress: req.ip
+         });
+       } catch (auditError) {
+         console.error('Failed to write audit log for profile_create:', auditError.message);
+       }
 
        logger.info(`[USER:PROFILE:${requestId}] Profile added for user ${user.email}: ${newProfile.department}`);
 
@@ -953,19 +999,23 @@ res.json({ success: true, message: 'Password reset request sent to admins' });
        profile.updatedAt = new Date();
        await user.save();
 
-       await AuditLog.create({
-         userId: req.user._id,
-         userEmail: req.user.email,
-         action: 'profile_update',
-         resource: 'user',
-         resourceId: user._id.toString(),
-         details: { 
-           profileId: profile.profileId,
-           department: profile.department,
-           changes: { confidentialityLevels, isPrimary, status }
-         },
-         ipAddress: req.ip
-       });
+       try {
+         await AuditLog.create({
+           userId: req.user._id,
+           userEmail: req.user.email,
+           action: 'profile_update',
+           resource: 'user',
+           resourceId: user._id.toString(),
+           details: {
+             profileId: profile.profileId,
+             department: profile.department,
+             changes: { confidentialityLevels, isPrimary, status }
+           },
+           ipAddress: req.ip
+         });
+       } catch (auditError) {
+         console.error('Failed to write audit log for profile_update:', auditError.message);
+       }
 
        logger.info(`[USER:PROFILE:${requestId}] Profile updated for user ${user.email}: ${profile.department}`);
 
@@ -1021,18 +1071,22 @@ res.json({ success: true, message: 'Password reset request sent to admins' });
         profile.updatedAt = new Date();
        await user.save();
 
-await AuditLog.create({
-          userId: req.user._id,
-          userEmail: req.user.email,
-          action: 'profile_deactivate',
-          resource: 'user',
-          resourceId: user._id.toString(),
-          details: { 
-            profileId: profile.profileId,
-            department: profile.department
-          },
-          ipAddress: req.ip
-        });
+       try {
+         await AuditLog.create({
+           userId: req.user._id,
+           userEmail: req.user.email,
+           action: 'profile_deactivate',
+           resource: 'user',
+           resourceId: user._id.toString(),
+           details: {
+             profileId: profile.profileId,
+             department: profile.department
+           },
+           ipAddress: req.ip
+         });
+       } catch (auditError) {
+         console.error('Failed to write audit log for profile_deactivate:', auditError.message);
+       }
 
 logger.info(`[USER:PROFILE:${requestId}] Profile deactivated for user ${user.email}: ${profile.department}`);
 
@@ -1087,18 +1141,22 @@ logger.info(`[USER:PROFILE:${requestId}] Profile deactivated for user ${user.ema
        profile.updatedAt = new Date();
        await user.save();
 
-       await AuditLog.create({
-         userId: req.user._id,
-         userEmail: req.user.email,
-         action: 'profile_set_primary',
-         resource: 'user',
-         resourceId: user._id.toString(),
-         details: { 
-           profileId: profile.profileId,
-           department: profile.department
-         },
-         ipAddress: req.ip
-       });
+       try {
+         await AuditLog.create({
+           userId: req.user._id,
+           userEmail: req.user.email,
+           action: 'profile_set_primary',
+           resource: 'user',
+           resourceId: user._id.toString(),
+           details: {
+             profileId: profile.profileId,
+             department: profile.department
+           },
+           ipAddress: req.ip
+         });
+       } catch (auditError) {
+         console.error('Failed to write audit log for profile_set_primary:', auditError.message);
+       }
 
        logger.info(`[USER:PROFILE:${requestId}] Profile set as primary for user ${user.email}: ${profile.department}`);
 

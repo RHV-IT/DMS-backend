@@ -63,18 +63,22 @@ const permissionController = {
         resourceId: file.fileId
       });
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'permission_grant',
-        resource: 'permission',
-        resourceId: file.fileId,
-        details: { 
-          grantedTo: user.email, 
-          access,
-          fileName: file.name
-        }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'permission_grant',
+          resource: 'permission',
+          resourceId: file.fileId,
+          details: {
+            grantedTo: user.email,
+            access,
+            fileName: file.name
+          }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for permission_grant:', auditError.message);
+      }
 
       res.json({ success: true, message: 'Permission granted successfully' });
     } catch (error) {
@@ -109,13 +113,17 @@ const permissionController = {
         resourceId: file.fileId
       });
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'permission_revoke',
-        resource: 'permission',
-        resourceId: file.fileId
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'permission_revoke',
+          resource: 'permission',
+          resourceId: file.fileId
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for permission_revoke:', auditError.message);
+      }
 
       res.json({ success: true, message: 'Permission revoked successfully' });
     } catch (error) {
@@ -266,19 +274,23 @@ const permissionController = {
         resourceId: file.fileId
       });
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'permission_grant',
-        resource: 'permission',
-        resourceId: file.fileId,
-        details: { 
-          action: 'hod_override', 
-          access,
-          fileName: file.name,
-          grantedTo: user.email
-        }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'permission_grant',
+          resource: 'permission',
+          resourceId: file.fileId,
+          details: {
+            action: 'hod_override',
+            access,
+            fileName: file.name,
+            grantedTo: user.email
+          }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for permission_grant (hod_override):', auditError.message);
+      }
 
       res.json({ success: true, message: 'HOD override applied' });
     } catch (error) {

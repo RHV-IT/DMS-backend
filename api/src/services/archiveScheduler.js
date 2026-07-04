@@ -93,6 +93,7 @@ const performMonthlyArchive = async (date, systemUser) => {
         folderId: null
       }).session(session);
 
+      let archivedCount = 0;
       if (files.length > 0) {
         const fileIds = files.map(f => f._id);
         await File.updateMany(
@@ -100,28 +101,35 @@ const performMonthlyArchive = async (date, systemUser) => {
           { folderId: monthFolder._id },
           { session }
         );
-
-        await AuditLog.create([{
-          userId: systemUser ? systemUser._id : new mongoose.Types.ObjectId(),
-          userEmail: 'system@archive',
-          action: 'archive',
-          resource: 'folder',
-          resourceId: monthFolder._id,
-          details: {
-            type: 'monthly',
-            month: monthName,
-            year,
-            fileCount: files.length,
-            department: dept
-          }
-        }], { session });
-
-        console.log(`[ARCHIVE] Archived ${files.length} files to ${monthName} ${year} for ${dept}`);
-      } else {
-        console.log(`[ARCHIVE] No unarchived files for ${dept} in ${monthName} ${year}`);
+        archivedCount = files.length;
       }
 
       await session.commitTransaction();
+
+      if (archivedCount > 0) {
+        try {
+          await AuditLog.create({
+            userId: systemUser ? systemUser._id : new mongoose.Types.ObjectId(),
+            userEmail: 'system@archive',
+            action: 'archive',
+            resource: 'folder',
+            resourceId: monthFolder._id,
+            details: {
+              type: 'monthly',
+              month: monthName,
+              year,
+              fileCount: archivedCount,
+              department: dept
+            }
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for archive (monthly):', auditError.message);
+        }
+
+        console.log(`[ARCHIVE] Archived ${archivedCount} files to ${monthName} ${year} for ${dept}`);
+      } else {
+        console.log(`[ARCHIVE] No unarchived files for ${dept} in ${monthName} ${year}`);
+      }
     } catch (err) {
       await session.abortTransaction();
       console.error(`[ARCHIVE] Error archiving ${dept} for ${monthName} ${year}:`, err.message);
@@ -150,21 +158,25 @@ const performYearlyArchive = async (date, systemUser) => {
     try {
       const yearFolder = await findOrCreateSystemFolder(String(year), null, dept, systemUser, session);
 
-      await AuditLog.create([{
-        userId: systemUser ? systemUser._id : new mongoose.Types.ObjectId(),
-        userEmail: 'system@archive',
-        action: 'archive',
-        resource: 'folder',
-        resourceId: yearFolder._id,
-        details: {
-          type: 'yearly',
-          year,
-          department: dept,
-          status: 'verified'
-        }
-      }], { session });
-
       await session.commitTransaction();
+
+      try {
+        await AuditLog.create({
+          userId: systemUser ? systemUser._id : new mongoose.Types.ObjectId(),
+          userEmail: 'system@archive',
+          action: 'archive',
+          resource: 'folder',
+          resourceId: yearFolder._id,
+          details: {
+            type: 'yearly',
+            year,
+            department: dept,
+            status: 'verified'
+          }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for archive (yearly):', auditError.message);
+      }
     } catch (err) {
       await session.abortTransaction();
       console.error(`[ARCHIVE] Error in yearly archive for ${dept}:`, err.message);

@@ -122,20 +122,24 @@ const fileController = {
 
        if (!canUploadLevel(user, fileLevel)) {
          // Audit denied upload attempt
-         await AuditLog.create({
-           userId: user._id,
-           userEmail: user.email,
-           action: 'restricted_access_attempt',
-           resource: 'file',
-           details: {
-             action: 'upload_denied',
-             attemptedLevel: fileLevel,
-             userLevel: user.getConfidentialityLevel(),
-             department: user.department
-           },
-           ipAddress: req.ip,
-           userAgent: req.get('user-agent')
-         });
+         try {
+           await AuditLog.create({
+             userId: user._id,
+             userEmail: user.email,
+             action: 'restricted_access_attempt',
+             resource: 'file',
+             details: {
+               action: 'upload_denied',
+               attemptedLevel: fileLevel,
+               userLevel: user.getConfidentialityLevel(),
+               department: user.department
+             },
+             ipAddress: req.ip,
+             userAgent: req.get('user-agent')
+           });
+         } catch (auditError) {
+           console.error('Failed to write audit log for upload_denied:', auditError.message);
+         }
          return res.status(403).json({
            success: false,
            message: 'You are not authorized to upload files with this confidentiality level.'
@@ -192,16 +196,20 @@ const fileController = {
         uploadedBy: user._id
       });
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'upload',
-        resource: 'file',
-        resourceId: file.fileId,
-        details: { fileName: file.name, size: file.size },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'upload',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: { fileName: file.name, size: file.size },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for upload:', auditError.message);
+      }
 
       res.status(201).json({
         success: true,
@@ -265,14 +273,18 @@ const fileController = {
         if (!canUploadLevel(user, fileLevel)) {
           errors.push(`File ${file.originalname}: confidentiality level ${fileLevel} not allowed for user`);
           // Audit each denied in bulk
-          await AuditLog.create({
-            userId: user._id,
-            userEmail: user.email,
-            action: 'restricted_access_attempt',
-            resource: 'file',
-            details: { action: 'bulk_upload_denied', fileName: file.originalname, attemptedLevel: fileLevel },
-            ipAddress: req.ip
-          });
+          try {
+            await AuditLog.create({
+              userId: user._id,
+              userEmail: user.email,
+              action: 'restricted_access_attempt',
+              resource: 'file',
+              details: { action: 'bulk_upload_denied', fileName: file.originalname, attemptedLevel: fileLevel },
+              ipAddress: req.ip
+            });
+          } catch (auditError) {
+            console.error('Failed to write audit log for bulk_upload_denied:', auditError.message);
+          }
           continue;
         }
 
@@ -372,37 +384,45 @@ const fileController = {
       const canAccessContents = canUserAccessFileContents(req.user, file, filePermissions);
 
       if (!canAccessContents) {
-        await AuditLog.create({
-          userId: req.user._id,
-          userEmail: req.user.email,
-          action: 'restricted_access_attempt',
-          resource: 'file',
-          resourceId: file.fileId,
-          details: {
-            action: 'download_denied',
-            fileName: file.name,
-            fileLevel: file.confidentialityLevel,
-            userDept: req.user.department,
-            userLevel: req.user.getConfidentialityLevel()
-          },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
-        });
+        try {
+          await AuditLog.create({
+            userId: req.user._id,
+            userEmail: req.user.email,
+            action: 'restricted_access_attempt',
+            resource: 'file',
+            resourceId: file.fileId,
+            details: {
+              action: 'download_denied',
+              fileName: file.name,
+              fileLevel: file.confidentialityLevel,
+              userDept: req.user.department,
+              userLevel: req.user.getConfidentialityLevel()
+            },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for download_denied:', auditError.message);
+        }
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
 
       const storageLocation = file.storagePath;
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'download',
-        resource: 'file',
-        resourceId: file.fileId,
-        details: { fileName: file.name },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'download',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: { fileName: file.name },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for download:', auditError.message);
+      }
 
       if (storageLocation && (storageLocation.startsWith('http://') || storageLocation.startsWith('https://'))) {
         // Stream download from cloud/blob - no local path ever
@@ -460,21 +480,25 @@ const fileController = {
 
       const filePermissions = await Permission.find({ fileId: file._id, isRevoked: false });
       if (!canViewFile(req.user, file, filePermissions)) {
-        await AuditLog.create({
-          userId: req.user._id,
-          userEmail: req.user.email,
-          action: 'restricted_access_attempt',
-          resource: 'file',
-          resourceId: file.fileId,
-          details: {
-            action: 'getFile_denied',
-            fileName: file.name,
-            fileLevel: file.confidentialityLevel,
-            userDept: req.user.department,
-            userLevel: req.user.getConfidentialityLevel()
-          },
-          ipAddress: req.ip
-        });
+        try {
+          await AuditLog.create({
+            userId: req.user._id,
+            userEmail: req.user.email,
+            action: 'restricted_access_attempt',
+            resource: 'file',
+            resourceId: file.fileId,
+            details: {
+              action: 'getFile_denied',
+              fileName: file.name,
+              fileLevel: file.confidentialityLevel,
+              userDept: req.user.department,
+              userLevel: req.user.getConfidentialityLevel()
+            },
+            ipAddress: req.ip
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for getFile_denied:', auditError.message);
+        }
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
 
@@ -713,21 +737,25 @@ const fileController = {
       const paginatedFiles = processedFiles.slice(startIndex, endIndex);
 
       // Audit
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'archive_view',
-        resource: 'archive',
-        details: {
-          fileCount: processedFiles.length,
-          department: user.department,
-          confidentialityLevel: user.getConfidentialityLevel(),
-          filters: { search, fileCategory: fileCategory || category, confidentialityLevel, uploadedBy, page, limit }
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-        ...req.auditEnhancement
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'archive_view',
+          resource: 'archive',
+          details: {
+            fileCount: processedFiles.length,
+            department: user.department,
+            confidentialityLevel: user.getConfidentialityLevel(),
+            filters: { search, fileCategory: fileCategory || category, confidentialityLevel, uploadedBy, page, limit }
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent'),
+          ...req.auditEnhancement
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for archive_view:', auditError.message);
+      }
 
       res.json({
         success: true,
@@ -817,14 +845,18 @@ const fileController = {
         resourceId: file.fileId
       });
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'file_update',
-        resource: 'file',
-        resourceId: file.fileId,
-        details: { version: file.currentVersion }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'file_update',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: { version: file.currentVersion }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for file_update:', auditError.message);
+      }
 
       res.json({ success: true, data: file });
     } catch (error) {
@@ -873,14 +905,18 @@ const fileController = {
           await Permission.deleteMany({ fileId: file._id });
           await file.deleteOne();
 
-          await AuditLog.create({
-            userId: req.user._id,
-            userEmail: req.user.email,
-            action: 'permanent_delete',
-            resource: 'file',
-            resourceId: file.fileId,
-            details: { fileName: file.name, permanent: true }
-          });
+          try {
+            await AuditLog.create({
+              userId: req.user._id,
+              userEmail: req.user.email,
+              action: 'permanent_delete',
+              resource: 'file',
+              resourceId: file.fileId,
+              details: { fileName: file.name, permanent: true }
+            });
+          } catch (auditError) {
+            console.error('Failed to write audit log for permanent_delete:', auditError.message);
+          }
         } else {
           const originalPermanentDeleteAt = file.permanentDeleteAt;
 
@@ -890,20 +926,24 @@ const fileController = {
           file.permanentDeleteAt = new Date();
           await file.save();
 
-          await AuditLog.create({
-            userId: req.user._id,
-            userEmail: req.user.email,
-            action: 'permanent_delete',
-            resource: 'file',
-            resourceId: file.fileId,
-            details: {
-              fileName: file.name,
-              permanent: false,
-              adminVisible: true,
-              deletedFromUserRecycleBin: true,
-              originalPermanentDeleteAt
-            }
-          });
+          try {
+            await AuditLog.create({
+              userId: req.user._id,
+              userEmail: req.user.email,
+              action: 'permanent_delete',
+              resource: 'file',
+              resourceId: file.fileId,
+              details: {
+                fileName: file.name,
+                permanent: false,
+                adminVisible: true,
+                deletedFromUserRecycleBin: true,
+                originalPermanentDeleteAt
+              }
+            });
+          } catch (auditError) {
+            console.error('Failed to write audit log for permanent_delete:', auditError.message);
+          }
         }
       } else {
         const deleteAfter30Days = new Date();
@@ -915,14 +955,18 @@ const fileController = {
         file.permanentDeleteAt = deleteAfter30Days;
         await file.save();
 
-        await AuditLog.create({
-          userId: req.user._id,
-          userEmail: req.user.email,
-          action: 'soft_delete',
-          resource: 'file',
-          resourceId: file.fileId,
-          details: { fileName: file.name, permanentDeleteAt: deleteAfter30Days }
-        });
+        try {
+          await AuditLog.create({
+            userId: req.user._id,
+            userEmail: req.user.email,
+            action: 'soft_delete',
+            resource: 'file',
+            resourceId: file.fileId,
+            details: { fileName: file.name, permanentDeleteAt: deleteAfter30Days }
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for soft_delete:', auditError.message);
+        }
       }
 
       res.json({
@@ -960,14 +1004,18 @@ const fileController = {
       file.permanentDeleteAt = null;
       await file.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'restore',
-        resource: 'file',
-        resourceId: file.fileId,
-        details: { fileName: file.name, restoredBy: req.user.email }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'restore',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: { fileName: file.name, restoredBy: req.user.email }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for restore:', auditError.message);
+      }
 
       res.json({ success: true, message: 'File restored successfully' });
     } catch (error) {
@@ -1016,14 +1064,18 @@ const fileController = {
       file.storagePath = version.filePath;
       await file.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'rollback',
-        resource: 'file',
-        resourceId: file.fileId,
-        details: { fromVersion: oldPath, toVersion: versionNumber }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'rollback',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: { fromVersion: oldPath, toVersion: versionNumber }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for rollback:', auditError.message);
+      }
 
       res.json({ success: true, message: `Rolled back to version ${versionNumber}` });
     } catch (error) {
@@ -1128,14 +1180,18 @@ const fileController = {
       await Permission.deleteMany({ fileId: file._id });
       await file.deleteOne();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'permanent_delete',
-        resource: 'file',
-        resourceId: req.params.fileId,
-        details: { fileName: file.name }
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'permanent_delete',
+          resource: 'file',
+          resourceId: req.params.fileId,
+          details: { fileName: file.name }
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for permanent_delete:', auditError.message);
+      }
 
       res.json({ success: true, message: 'File permanently deleted' });
     } catch (error) {
@@ -1201,14 +1257,18 @@ const fileController = {
        const fileLevel = _resolveFileConfidentiality(confidentialityLevel, folderConfidentiality);
        
        if (!canUploadLevel(user, fileLevel)) {
-         await AuditLog.create({
-           userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
-           resource: 'file', details: { action: 'scanned_upload_denied', attemptedLevel: fileLevel },
-           ipAddress: req.ip
-         });
-         return res.status(403).json({ 
-           success: false, 
-           message: 'You are not authorized to upload files with this confidentiality level.' 
+         try {
+           await AuditLog.create({
+             userId: user._id, userEmail: user.email, action: 'restricted_access_attempt',
+             resource: 'file', details: { action: 'scanned_upload_denied', attemptedLevel: fileLevel },
+             ipAddress: req.ip
+           });
+         } catch (auditError) {
+           console.error('Failed to write audit log for scanned_upload_denied:', auditError.message);
+         }
+         return res.status(403).json({
+           success: false,
+           message: 'You are not authorized to upload files with this confidentiality level.'
          });
        }
 
@@ -1269,16 +1329,20 @@ const fileController = {
         uploadedBy: user._id
       });
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'upload',
-        resource: 'file',
-        resourceId: file.fileId,
-        details: { fileName: file.name, size: file.size, isScanned: true, uploadSource: source },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'upload',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: { fileName: file.name, size: file.size, isScanned: true, uploadSource: source },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for upload:', auditError.message);
+      }
 
       res.status(201).json({
         success: true,
@@ -1342,7 +1406,11 @@ const fileController = {
          const fileLevel = _resolveFileConfidentiality(confidentialityLevel, folderConfidentiality);
          if (!canUploadLevel(user, fileLevel)) {
           errors.push(`File ${file.originalname}: internal level not allowed`);
-          await AuditLog.create({ userId: user._id, userEmail: user.email, action: 'restricted_access_attempt', resource: 'file', details: {action:'scanned_bulk_denied', fileName: file.originalname}, ipAddress: req.ip });
+          try {
+            await AuditLog.create({ userId: user._id, userEmail: user.email, action: 'restricted_access_attempt', resource: 'file', details: {action:'scanned_bulk_denied', fileName: file.originalname}, ipAddress: req.ip });
+          } catch (auditError) {
+            console.error('Failed to write audit log for scanned_bulk_denied:', auditError.message);
+          }
           continue;
         }
 
@@ -1383,15 +1451,19 @@ const fileController = {
         files.push(newFile);
       }
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'upload',
-        resource: 'file',
-        details: { fileCount: files.length, isScanned: true, uploadSource: source, bulk: true },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'upload',
+          resource: 'file',
+          details: { fileCount: files.length, isScanned: true, uploadSource: source, bulk: true },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for upload:', auditError.message);
+      }
 
       res.status(201).json({
         success: true,
@@ -1431,22 +1503,26 @@ const fileController = {
       console.log('[PREVIEW] User role:', req.user.role);
 
       if (!canAccessContents) {
-        await AuditLog.create({
-          userId: req.user._id,
-          userEmail: req.user.email,
-          action: 'restricted_access_attempt',
-          resource: 'file',
-          resourceId: file.fileId,
-          details: {
-            action: 'preview_denied',
-            fileName: file.name,
-            fileLevel: file.confidentialityLevel,
-            userDept: req.user.department,
-            userLevel: req.user.getConfidentialityLevel()
-          },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
-        });
+        try {
+          await AuditLog.create({
+            userId: req.user._id,
+            userEmail: req.user.email,
+            action: 'restricted_access_attempt',
+            resource: 'file',
+            resourceId: file.fileId,
+            details: {
+              action: 'preview_denied',
+              fileName: file.name,
+              fileLevel: file.confidentialityLevel,
+              userDept: req.user.department,
+              userLevel: req.user.getConfidentialityLevel()
+            },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for preview_denied:', auditError.message);
+        }
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
 
@@ -1536,22 +1612,26 @@ const fileController = {
        const canAccessContents = canUserAccessFileContents(req.user, file, filePermissions);
 
         if (!canAccessContents) {
-          await AuditLog.create({
-            userId: req.user._id,
-            userEmail: req.user.email,
-            action: 'restricted_access_attempt',
-            resource: 'file',
-            resourceId: file.fileId,
-            details: {
-              action: 'google_preview_denied',
-              fileName: file.name,
-              fileLevel: file.confidentialityLevel,
-              userDept: req.user.department,
-              userLevel: req.user.getConfidentialityLevel()
-            },
-            ipAddress: req.ip,
-            userAgent: req.get('user-agent')
-          });
+          try {
+            await AuditLog.create({
+              userId: req.user._id,
+              userEmail: req.user.email,
+              action: 'restricted_access_attempt',
+              resource: 'file',
+              resourceId: file.fileId,
+              details: {
+                action: 'google_preview_denied',
+                fileName: file.name,
+                fileLevel: file.confidentialityLevel,
+                userDept: req.user.department,
+                userLevel: req.user.getConfidentialityLevel()
+              },
+              ipAddress: req.ip,
+              userAgent: req.get('user-agent')
+            });
+          } catch (auditError) {
+            console.error('Failed to write audit log for google_preview_denied:', auditError.message);
+          }
           return res.status(403).json({ success: false, message: 'Access denied' });
         }
 

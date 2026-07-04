@@ -124,16 +124,20 @@ const folderController = {
         level
       });
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'create_folder',
-        resource: 'folder',
-        resourceId: folder._id,
-        details: { folderName: folder.name, path: folder.path },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'create_folder',
+          resource: 'folder',
+          resourceId: folder._id,
+          details: { folderName: folder.name, path: folder.path },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for create_folder:', auditError.message);
+      }
 
       res.status(201).json({ success: true, data: folder });
     } catch (error) {
@@ -289,20 +293,24 @@ const folderController = {
 
       await folder.save();
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: name && name.trim() !== oldName ? 'rename_folder' : 'update_folder',
-        resource: 'folder',
-        resourceId: folder._id,
-        details: {
-          folderName: folder.name,
-          oldName,
-          path: folder.path
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: name && name.trim() !== oldName ? 'rename_folder' : 'update_folder',
+          resource: 'folder',
+          resourceId: folder._id,
+          details: {
+            folderName: folder.name,
+            oldName,
+            path: folder.path
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for update_folder:', auditError.message);
+      }
 
       res.json({ success: true, data: folder });
     } catch (error) {
@@ -357,16 +365,20 @@ const folderController = {
 
       await _softDeleteDescendants(folder._id);
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'delete_folder',
-        resource: 'folder',
-        resourceId: folder._id,
-        details: { folderName: folder.name, path: folder.path },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'delete_folder',
+          resource: 'folder',
+          resourceId: folder._id,
+          details: { folderName: folder.name, path: folder.path },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for delete_folder:', auditError.message);
+      }
 
       res.json({ success: true, message: 'Folder moved to recycle bin' });
     } catch (error) {
@@ -414,16 +426,20 @@ const folderController = {
 
       await _restoreDescendants(folder._id);
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'restore_folder',
-        resource: 'folder',
-        resourceId: folder._id,
-        details: { folderName: folder.name, path: folder.path },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'restore_folder',
+          resource: 'folder',
+          resourceId: folder._id,
+          details: { folderName: folder.name, path: folder.path },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for restore_folder:', auditError.message);
+      }
 
       res.json({ success: true, message: 'Folder restored successfully', data: folder });
     } catch (error) {
@@ -500,20 +516,24 @@ const folderController = {
       file.folderId = targetFolderId || null;
       await file.save();
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'move_file',
-        resource: 'file',
-        resourceId: file.fileId,
-        details: {
-          fileName: file.name,
-          fromFolderId: oldFolderId,
-          toFolderId: targetFolderId || null
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'move_file',
+          resource: 'file',
+          resourceId: file.fileId,
+          details: {
+            fileName: file.name,
+            fromFolderId: oldFolderId,
+            toFolderId: targetFolderId || null
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for move_file:', auditError.message);
+      }
 
       res.json({ success: true, data: file, message: 'File moved successfully' });
     } catch (error) {
@@ -561,15 +581,19 @@ const folderController = {
       }
 
       if (moved.length > 0) {
-        await AuditLog.create({
-          userId: user._id,
-          userEmail: user.email,
-          action: 'bulk_move_file',
-          resource: 'file',
-          details: { movedCount: moved.length, targetFolderId: targetFolderId || null },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
-        });
+        try {
+          await AuditLog.create({
+            userId: user._id,
+            userEmail: user.email,
+            action: 'bulk_move_file',
+            resource: 'file',
+            details: { movedCount: moved.length, targetFolderId: targetFolderId || null },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for bulk_move_file:', auditError.message);
+        }
       }
 
       res.json({
@@ -642,20 +666,24 @@ const folderController = {
         uploadedBy: user._id
       });
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'copy_file',
-        resource: 'file',
-        resourceId: newFile.fileId,
-        details: {
-          fileName: newFile.name,
-          copiedFrom: file.fileId,
-          toFolderId: targetFolderId || null
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'copy_file',
+          resource: 'file',
+          resourceId: newFile.fileId,
+          details: {
+            fileName: newFile.name,
+            copiedFrom: file.fileId,
+            toFolderId: targetFolderId || null
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for copy_file:', auditError.message);
+      }
 
       res.status(201).json({ success: true, data: newFile, message: 'File copied successfully' });
     } catch (error) {
@@ -721,22 +749,26 @@ const folderController = {
       await folder.save();
       await _cascadePaths(folder._id);
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'move_folder',
-        resource: 'folder',
-        resourceId: folder._id,
-        details: {
-          folderName: folder.name,
-          fromPath: oldPath,
-          toPath: folder.path,
-          fromParentId: oldParentId,
-          toParentId: targetFolderId || null
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'move_folder',
+          resource: 'folder',
+          resourceId: folder._id,
+          details: {
+            folderName: folder.name,
+            fromPath: oldPath,
+            toPath: folder.path,
+            fromParentId: oldParentId,
+            toParentId: targetFolderId || null
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent')
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for move_folder:', auditError.message);
+      }
 
       res.json({ success: true, data: folder, message: 'Folder moved successfully' });
     } catch (error) {
@@ -779,20 +811,24 @@ const folderController = {
         const newFolder = await folderController._copyFolderRecursive(sourceFolder, targetFolderId || null, user, session);
         await session.commitTransaction();
 
-        await AuditLog.create({
-          userId: user._id,
-          userEmail: user.email,
-          action: 'copy_folder',
-          resource: 'folder',
-          resourceId: newFolder._id,
-          details: {
-            folderName: newFolder.name,
-            copiedFrom: folderId,
-            toParentId: targetFolderId || null
-          },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
-        });
+        try {
+          await AuditLog.create({
+            userId: user._id,
+            userEmail: user.email,
+            action: 'copy_folder',
+            resource: 'folder',
+            resourceId: newFolder._id,
+            details: {
+              folderName: newFolder.name,
+              copiedFrom: folderId,
+              toParentId: targetFolderId || null
+            },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for copy_folder:', auditError.message);
+        }
 
         res.status(201).json({ success: true, data: newFolder, message: 'Folder copied successfully' });
       } catch (err) {
@@ -927,15 +963,19 @@ const folderController = {
       }
 
       if (deleted.length > 0) {
-        await AuditLog.create({
-          userId: user._id,
-          userEmail: user.email,
-          action: 'bulk_delete_folder',
-          resource: 'folder',
-          details: { deletedCount: deleted.length },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
-        });
+        try {
+          await AuditLog.create({
+            userId: user._id,
+            userEmail: user.email,
+            action: 'bulk_delete_folder',
+            resource: 'folder',
+            details: { deletedCount: deleted.length },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for bulk_delete_folder:', auditError.message);
+        }
       }
 
       res.json({
@@ -984,15 +1024,19 @@ const folderController = {
       }
 
       if (deleted.length > 0) {
-        await AuditLog.create({
-          userId: user._id,
-          userEmail: user.email,
-          action: 'bulk_delete_file',
-          resource: 'file',
-          details: { deletedCount: deleted.length },
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent')
-        });
+        try {
+          await AuditLog.create({
+            userId: user._id,
+            userEmail: user.email,
+            action: 'bulk_delete_file',
+            resource: 'file',
+            details: { deletedCount: deleted.length },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for bulk_delete_file:', auditError.message);
+        }
       }
 
       res.json({

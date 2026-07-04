@@ -18,7 +18,7 @@ const departmentController = {
       });
 
       if (existing) {
-        return res.status(400).json({ success: false, message: 'Department with this name or code already exists' });
+        return res.status(409).json({ success: false, message: 'Department with this name or code already exists' });
       }
 
       const department = await Department.create({
@@ -29,17 +29,21 @@ const departmentController = {
         updatedBy: req.user._id
       });
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'department_create',
-        resource: 'department',
-        resourceId: department._id.toString(),
-        details: { name: department.name, code: department.code },
-        ipAddress: req.ip
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'department_create',
+          resource: 'department',
+          resourceId: department._id.toString(),
+          details: { name: department.name, code: department.code },
+          ipAddress: req.ip
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for department_create:', auditError.message);
+      }
 
-      res.status(201).json({ success: true, data: department });
+      res.status(201).json({ success: true, message: 'Department created successfully', data: department });
     } catch (error) {
       next(error);
     }
@@ -89,13 +93,15 @@ const departmentController = {
         return res.status(404).json({ success: false, message: 'Department not found' });
       }
 
+      const wasActive = department.isActive;
+
       if (name) {
         const existing = await Department.findOne({
           _id: { $ne: department._id },
           name: name.trim().toUpperCase()
         });
         if (existing) {
-          return res.status(400).json({ success: false, message: 'Department with this name already exists' });
+          return res.status(409).json({ success: false, message: 'Department with this name already exists' });
         }
         department.name = name.trim().toUpperCase();
       }
@@ -106,7 +112,7 @@ const departmentController = {
           code: code.trim().toUpperCase()
         });
         if (existing) {
-          return res.status(400).json({ success: false, message: 'Department with this code already exists' });
+          return res.status(409).json({ success: false, message: 'Department with this code already exists' });
         }
         department.code = code.trim().toUpperCase();
       }
@@ -122,17 +128,26 @@ const departmentController = {
       department.updatedBy = req.user._id;
       await department.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'department_update',
-        resource: 'department',
-        resourceId: department._id.toString(),
-        details: { name: department.name, code: department.code, isActive: department.isActive },
-        ipAddress: req.ip
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'department_update',
+          resource: 'department',
+          resourceId: department._id.toString(),
+          details: { name: department.name, code: department.code, isActive: department.isActive },
+          ipAddress: req.ip
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for department_update:', auditError.message);
+      }
 
-      res.json({ success: true, data: department });
+      let message = 'Department updated successfully';
+      if (wasActive !== department.isActive) {
+        message = department.isActive ? 'Department activated successfully' : 'Department deactivated successfully';
+      }
+
+      res.json({ success: true, message, data: department });
     } catch (error) {
       next(error);
     }
@@ -149,15 +164,19 @@ const departmentController = {
       department.updatedBy = req.user._id;
       await department.save();
 
-      await AuditLog.create({
-        userId: req.user._id,
-        userEmail: req.user.email,
-        action: 'department_delete',
-        resource: 'department',
-        resourceId: department._id.toString(),
-        details: { name: department.name, code: department.code },
-        ipAddress: req.ip
-      });
+      try {
+        await AuditLog.create({
+          userId: req.user._id,
+          userEmail: req.user.email,
+          action: 'department_delete',
+          resource: 'department',
+          resourceId: department._id.toString(),
+          details: { name: department.name, code: department.code },
+          ipAddress: req.ip
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for department_delete:', auditError.message);
+      }
 
       res.json({ success: true, message: 'Department deactivated successfully' });
     } catch (error) {

@@ -127,15 +127,19 @@ const user = await User.create({
        const deviceInfo = req.deviceInfo || DeviceInfoExtractor.extractFromRequest(req);
        const summary = `${user.name} registered from ${deviceInfo.machine?.machineName || deviceInfo.device?.deviceName || "Unknown Device"}`;
 
-       await AuditLog.create({
-         ...deviceInfo,
-         userId: user._id,
-         userEmail: user.email,
-         action: "login",
-         resource: "auth",
-         details: { method: "registration" },
-         summary,
-       });
+       try {
+         await AuditLog.create({
+           ...deviceInfo,
+           userId: user._id,
+           userEmail: user.email,
+           action: "login",
+           resource: "auth",
+           details: { method: "registration" },
+           summary,
+         });
+       } catch (auditError) {
+         console.error('Failed to write audit log for login (registration):', auditError.message);
+       }
 
        const cookieConfig = authService.getCookieConfig();
 
@@ -212,15 +216,19 @@ const user = await User.create({
 
       // Account deleted check
       if (!user) {
-        await AuditLog.create({
-          userId: null,
-          userEmail: email,
-          action: "failed_login",
-          resource: "auth",
-          details: { method: "password", success: false, reason: "user_not_found", rememberMe },
-          ipAddress: req.ip,
-          userAgent: req.get("user-agent"),
-        });
+        try {
+          await AuditLog.create({
+            userId: null,
+            userEmail: email,
+            action: "failed_login",
+            resource: "auth",
+            details: { method: "password", success: false, reason: "user_not_found", rememberMe },
+            ipAddress: req.ip,
+            userAgent: req.get("user-agent"),
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for failed_login (user_not_found):', auditError.message);
+        }
 
         logger.warn(`[AUTH:LOGIN:${requestId}] User not found: ${email}`);
         return res.status(401).json({ success: false, message: "Invalid email or password" });
@@ -231,14 +239,18 @@ const user = await User.create({
         const deviceInfo = req.deviceInfo || DeviceInfoExtractor.extractFromRequest(req);
         const summary = `${email} attempted login from ${deviceInfo.machine?.machineName || "Unknown Device"} (Account Deleted)`;
 
-        await AuditLog.create({
-          ...deviceInfo,
-          userId: user._id,
-          userEmail: user.email,
-          action: "failed_login",
-          resource: "auth",
-          details: { method: "password", success: false, reason: "account_deleted", rememberMe },
-        });
+        try {
+          await AuditLog.create({
+            ...deviceInfo,
+            userId: user._id,
+            userEmail: user.email,
+            action: "failed_login",
+            resource: "auth",
+            details: { method: "password", success: false, reason: "account_deleted", rememberMe },
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for failed_login (account_deleted):', auditError.message);
+        }
 
         return res.status(403).json({
           success: false,
@@ -248,15 +260,19 @@ const user = await User.create({
 
       // Suspended account
       if (user.status === "suspended") {
-        await AuditLog.create({
-          userId: user._id,
-          userEmail: user.email,
-          action: "login",
-          resource: "auth",
-          details: { method: "password", success: false, reason: "account_suspended", rememberMe },
-          ipAddress: req.ip,
-          userAgent: req.get("user-agent"),
-        });
+        try {
+          await AuditLog.create({
+            userId: user._id,
+            userEmail: user.email,
+            action: "login",
+            resource: "auth",
+            details: { method: "password", success: false, reason: "account_suspended", rememberMe },
+            ipAddress: req.ip,
+            userAgent: req.get("user-agent"),
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for login (account_suspended):', auditError.message);
+        }
 
         return res.status(403).json({
           success: false,
@@ -268,15 +284,19 @@ const user = await User.create({
       const isMatch = await user.comparePassword(password);
 
       if (!isMatch) {
-        await AuditLog.create({
-          userId: user._id,
-          userEmail: user.email,
-          action: "login",
-          resource: "auth",
-          details: { method: "password", success: false, rememberMe },
-          ipAddress: req.ip,
-          userAgent: req.get("user-agent"),
-        });
+        try {
+          await AuditLog.create({
+            userId: user._id,
+            userEmail: user.email,
+            action: "login",
+            resource: "auth",
+            details: { method: "password", success: false, rememberMe },
+            ipAddress: req.ip,
+            userAgent: req.get("user-agent"),
+          });
+        } catch (auditError) {
+          console.error('Failed to write audit log for login (invalid_password):', auditError.message);
+        }
 
         logger.warn(`[AUTH:LOGIN:${requestId}] Invalid password for: ${email}`);
         return res.status(401).json({ success: false, message: "Invalid email or password" });
@@ -528,13 +548,17 @@ const user = await User.create({
       await user.addToPasswordHistory();
       await user.save();
 
-      await AuditLog.create({
-        userId: user._id,
-        userEmail: user.email,
-        action: "user_update",
-        resource: "password",
-        details: { action: "password_change" },
-      });
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          userEmail: user.email,
+          action: "user_update",
+          resource: "password",
+          details: { action: "password_change" },
+        });
+      } catch (auditError) {
+        console.error('Failed to write audit log for password_change:', auditError.message);
+      }
 
       logger.info(`[AUTH:CHANGE-PASS:${requestId}] Password changed successfully for user: ${user.email}`);
 
