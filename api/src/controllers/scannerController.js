@@ -3,23 +3,9 @@ const AuditLog = require('../models/AuditLog');
 const path = require('path');
 const fs = require('fs');
 const { canUploadLevel } = require('../utils/accessControl');
-const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('../constants');
+const { getFileCategory } = require('../utils/fileTypes');
 
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
-
-const getFileCategory = (originalName, mimeType) => {
-  const extension = path.extname(originalName || '').toLowerCase().replace('.', '');
-  const normalizedMime = String(mimeType || '').split(';')[0].trim().toLowerCase();
-
-  const byExtension = Object.keys(FILE_EXTENSION_GROUPS).find(category =>
-    FILE_EXTENSION_GROUPS[category].includes(extension)
-  );
-  if (byExtension) return byExtension;
-
-  return Object.keys(FILE_TYPE_GROUPS).find(category =>
-    FILE_TYPE_GROUPS[category].includes(normalizedMime)
-  ) || FILE_CATEGORIES.OTHER;
-};
 
 const scannerController = {
    // GET /api/v1/scanner/health

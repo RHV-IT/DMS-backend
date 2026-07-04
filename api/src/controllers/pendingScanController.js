@@ -13,6 +13,7 @@ const os = require('os');
 const FileConverter = require('../utils/fileConverter');
 const { v4: uuidv4 } = require('uuid');
 const { put } = require('@vercel/blob');
+const { getFileCategory } = require('../utils/fileTypes');
 
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024;
 const UPLOAD_PATH = process.env.UPLOAD_PATH 
@@ -21,20 +22,6 @@ const UPLOAD_PATH = process.env.UPLOAD_PATH
 // Permanent storage for pending scans (survives serverless restarts)
 // Use a subdirectory of the temp uploads directory for consistency
 let PENDING_UPLOAD_PATH = process.env.PENDING_UPLOAD_PATH || path.join(UPLOAD_PATH, 'pending');
-
-const getFileCategory = (originalName, mimeType) => {
-  const extension = path.extname(originalName || '').toLowerCase().replace('.', '');
-  const normalizedMime = String(mimeType || '').split(';')[0].trim().toLowerCase();
-
-  const byExtension = Object.keys(FILE_EXTENSION_GROUPS).find(category =>
-    FILE_EXTENSION_GROUPS[category].includes(extension)
-  );
-  if (byExtension) return byExtension;
-
-  return Object.keys(FILE_TYPE_GROUPS).find(category =>
-    FILE_TYPE_GROUPS[category].includes(normalizedMime)
-  ) || FILE_CATEGORIES.OTHER;
-};
 
 /**
  * Generate a stable file fingerprint for deduplication
@@ -439,8 +426,6 @@ const scannerController = {
       let storagePathOrUrl;
       let usedBlob = false;
       try {
-const { put } = require('@vercel/blob');
-const { FILE_CATEGORIES, FILE_EXTENSION_GROUPS, FILE_TYPE_GROUPS } = require('../constants');
         const safeName = pendingScan.originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
         const blobName = `${Date.now()}-${uuidv4()}-${safeName}`;
         const blob = await put(`files/confirmed/${blobName}`, buffer, {
