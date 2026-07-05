@@ -27,6 +27,7 @@ const srcConfigRoutes = require("./src/routes/config.routes");
 const srcDepartmentRoutes = require("./src/routes/department.routes");
 const srcFolderRoutes = require("./src/routes/folder.routes");
 const { startArchiveScheduler } = require("./src/services/archiveScheduler");
+const { runArchiveMigration } = require("./src/services/archiveMigration");
 //database connection - using Mongoose for consistency with models
 const connectDB = require("./src/config/database");
 
@@ -160,6 +161,14 @@ app.use('/api/v1/folders', srcFolderRoutes);
 
 // Start archive scheduler (non-blocking)
 startArchiveScheduler();
+
+// One-time migration of historical files into their Year/Month archive folders.
+// Idempotent (records completion in ArchiveMigrationStatus), so this is cheap on
+// every subsequent boot. Waits for the DB connection since this runs at module
+// load time, before any request has triggered the per-request connect middleware.
+connectDB()
+  .then(() => runArchiveMigration())
+  .catch((err) => console.error('[ARCHIVE MIGRATION] Startup run failed:', err.message));
 
 // TEST ROUTE for debugging
 app.get("/test", (req, res) => {
