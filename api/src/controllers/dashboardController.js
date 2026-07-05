@@ -79,6 +79,10 @@ const dashboardController = {
         q = { ...strictQ, isDeleted: { $ne: true } };
       }
 
+      // Dashboard "recent files" is a root-level view — a file that has been
+      // moved into a folder must disappear from it, same as the main file list.
+      q.folderId = null;
+
       const files = await File.find(q)
         .populate('uploadedBy', 'name email department confidentialityLevels')
         .populate('owner', 'name email department')

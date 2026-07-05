@@ -790,6 +790,10 @@ const folderController = {
         return res.status(404).json({ success: false, message: 'Source folder not found' });
       }
 
+      if (sourceFolder.isSystemFolder) {
+        return res.status(400).json({ success: false, message: 'System folders cannot be copied' });
+      }
+
       if (user.role !== 'admin' && sourceFolder.department !== user.department) {
         return res.status(403).json({ success: false, message: 'Cannot copy folder from another department' });
       }

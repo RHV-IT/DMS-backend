@@ -130,5 +130,8 @@ fileSchema.pre('save', function() {
 fileSchema.index({ folderId: 1 });
 fileSchema.index({ department: 1, createdAt: -1 });
 fileSchema.index({ confidentialityLevel: 1 });
+// Supports the archive scheduler/migration queries: find unarchived files for a
+// given department within a date range without a full collection scan.
+fileSchema.index({ folderId: 1, department: 1, createdAt: 1 });
 
 module.exports = mongoose.model('File', fileSchema);

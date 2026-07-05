@@ -501,6 +501,10 @@ const fileController = {
         query = { ...strictQuery };
       }
 
+      // Root listing must only ever return unfoldered files. Once a file has a
+      // folderId it belongs exclusively to that folder's listing (GET /folders/:id).
+      query.folderId = null;
+
       if (type) query.type = type;
       if (fileCategory || category) {
         const categoryQuery = buildFileCategoryQuery(fileCategory || category);
