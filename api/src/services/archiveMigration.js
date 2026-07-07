@@ -3,7 +3,7 @@ const File = require('../models/File');
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const ArchiveMigrationStatus = require('../models/ArchiveMigrationStatus');
-const { getMonthStart, getMonthEnd, findOrCreateMonthFolder, MONTH_NAMES } = require('../utils/archiveFolders');
+const { getMonthStart, getMonthEnd, findOrCreateMonthFolder, isMonthArchivable, MONTH_NAMES } = require('../utils/archiveFolders');
 
 const TZ = (process.env.TZ || 'UTC').replace(/^:/, '');
 
@@ -14,6 +14,11 @@ const TZ = (process.env.TZ || 'UTC').replace(/^:/, '');
  * - Ignores deleted files.
  * - Ignores files already inside a folder (folderId != null) — including files
  *   already archived by a previous migration run or by the scheduler.
+ * - Ignores the active (in-progress) and any future month — those files must
+ *   stay visible at their normal location until the month actually completes.
+ *   That handoff is the recurring scheduler's job (archiveScheduler.js), which
+ *   runs indefinitely and will pick the month up the moment it completes; the
+ *   migration only ever deals with months that are already fully completed.
  * - Never loads individual file documents into memory: an aggregation discovers
  *   which (department, year, month) groups have work, then each group is moved
  *   with a single bulk updateMany — safe for 100,000+ files.
@@ -46,7 +51,7 @@ const runArchiveMigration = async ({ force = false } = {}) => {
     File.countDocuments({ isDeleted: { $ne: true }, folderId: { $ne: null } })
   ]);
 
-  const groups = await File.aggregate([
+  const allGroups = await File.aggregate([
     { $match: { folderId: null, isDeleted: { $ne: true } } },
     {
       $group: {
@@ -59,6 +64,19 @@ const runArchiveMigration = async ({ force = false } = {}) => {
       }
     }
   ]);
+
+  // Completed months only — the active/current month is deliberately left alone
+  // here; the recurring scheduler picks it up automatically once it completes.
+  const groups = allGroups.filter((g) => isMonthArchivable(g._id.year, g._id.month - 1));
+  const skippedActiveMonthGroups = allGroups.filter((g) => !isMonthArchivable(g._id.year, g._id.month - 1));
+  const skippedActiveMonthFiles = skippedActiveMonthGroups.reduce((sum, g) => sum + g.count, 0);
+
+  if (skippedActiveMonthGroups.length > 0) {
+    for (const g of skippedActiveMonthGroups) {
+      const { department, year, month } = g._id;
+      console.log(`[ARCHIVE MIGRATION] Leaving ${g.count} file(s) for ${MONTH_NAMES[month - 1]} ${year} (${department}) at their normal location — month is still active`);
+    }
+  }
 
   const systemUser = await User.findOne({ role: 'admin' }).select('_id');
 
@@ -109,6 +127,7 @@ const runArchiveMigration = async ({ force = false } = {}) => {
     foldersCreated: counters.foldersCreated,
     yearsCreated: counters.yearsCreated,
     skippedDeleted: filesDeleted,
+    skippedActiveMonth: skippedActiveMonthFiles,
     alreadyArchived: filesAlreadyArchived,
     groupsProcessed: groups.length,
     groupsFailed,
@@ -116,13 +135,14 @@ const runArchiveMigration = async ({ force = false } = {}) => {
   };
 
   console.log('[ARCHIVE MIGRATION] Summary:');
-  console.log(`  Files scanned:     ${stats.filesScanned}`);
-  console.log(`  Files moved:       ${stats.filesMoved}`);
-  console.log(`  Folders created:   ${stats.foldersCreated}`);
-  console.log(`  Years created:     ${stats.yearsCreated}`);
-  console.log(`  Skipped (deleted): ${stats.skippedDeleted}`);
-  console.log(`  Already archived:  ${stats.alreadyArchived}`);
-  console.log(`  Duration:          ${durationMs}ms`);
+  console.log(`  Files scanned:          ${stats.filesScanned}`);
+  console.log(`  Files moved:            ${stats.filesMoved}`);
+  console.log(`  Folders created:        ${stats.foldersCreated}`);
+  console.log(`  Years created:          ${stats.yearsCreated}`);
+  console.log(`  Skipped (deleted):      ${stats.skippedDeleted}`);
+  console.log(`  Skipped (active month): ${stats.skippedActiveMonth}`);
+  console.log(`  Already archived:       ${stats.alreadyArchived}`);
+  console.log(`  Duration:               ${durationMs}ms`);
 
   // Only mark as fully completed if every group succeeded — a partial failure
   // (e.g. a transient DB error on one department/month) should be retried on

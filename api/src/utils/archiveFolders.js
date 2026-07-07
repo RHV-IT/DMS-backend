@@ -23,6 +23,35 @@ const getMonthEnd = (year, month) => new Date(year, month + 1, 0, 23, 59, 59, 99
 const getYearStart = (year) => new Date(year, 0, 1, 0, 0, 0, 0);
 const getYearEnd = (year) => new Date(year, 11, 31, 23, 59, 59, 999);
 
+const isLastDayOfMonth = (date) => {
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  return date.getDate() === lastDay;
+};
+
+const isLastDayOfYear = (date) => date.getMonth() === 11 && date.getDate() === 31;
+
+/**
+ * The single source of truth for "is this month allowed to be archived yet?"
+ * A month is archivable once it is strictly in the past, OR it is the current
+ * calendar month AND today is its last day (i.e. it has just completed).
+ * A future month is never archivable. Files uploaded during the active month
+ * must stay visible at their normal location until this returns true.
+ */
+const isMonthArchivable = (year, month, now = new Date()) => {
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  if (year < currentYear || (year === currentYear && month < currentMonth)) {
+    return true; // strictly a completed month
+  }
+
+  if (year === currentYear && month === currentMonth) {
+    return isLastDayOfMonth(now); // the active month only completes on its last day
+  }
+
+  return false; // future month
+};
+
 /**
  * Find an existing system folder or create it. Idempotent: calling this twice
  * with the same (name, parentId, department) never creates a duplicate.
@@ -105,6 +134,9 @@ module.exports = {
   getMonthEnd,
   getYearStart,
   getYearEnd,
+  isLastDayOfMonth,
+  isLastDayOfYear,
+  isMonthArchivable,
   findOrCreateSystemFolder,
   findOrCreateYearFolder,
   findOrCreateMonthFolder
