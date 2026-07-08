@@ -16,7 +16,6 @@ router.post(
   roleMiddleware('admin'),
   [
     body('name').notEmpty().withMessage('Name is required'),
-    body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters'),
     body('department').notEmpty().withMessage('Department is required'),
     body('role').custom((value) => ['admin', 'hod', 'user'].includes(String(value || '').trim().toLowerCase())).withMessage('Role is required (admin, hod, or user)')
@@ -27,6 +26,7 @@ router.post(
 router.put('/:id', roleMiddleware('admin', 'hod'), userController.updateUser);
 
 router.post('/:id/reset', roleMiddleware('admin'), userController.resetPassword);
+router.post('/:id/resend-welcome-email', roleMiddleware('admin'), userController.resendWelcomeEmail);
 router.post('/:id/suspend', roleMiddleware('admin'), userController.suspendUser);
 router.post('/:id/restore', roleMiddleware('admin'), userController.restoreUser);
 router.post('/:id/delete', roleMiddleware('admin'), userController.deleteUser);

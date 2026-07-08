@@ -110,6 +110,19 @@ const userSchema = new mongoose.Schema({
   },
   // Refresh token for generating new access tokens
   refreshToken: String,
+  // Timestamp the automatic welcome email was successfully sent (prevents duplicate resends)
+  welcomeEmailSentAt: {
+    type: Date,
+    default: null
+  },
+  // Encrypted (reversible) copy of the temporary password, kept ONLY until the welcome
+  // email is confirmed delivered so it can be resent on failure. select:false means it is
+  // never returned unless explicitly requested via .select('+pendingWelcomeCredential').
+  pendingWelcomeCredential: {
+    type: String,
+    default: null,
+    select: false
+  },
   // Agent health tracking fields (for scanner agent)
   lastAgentHeartbeat: {
     type: Date,

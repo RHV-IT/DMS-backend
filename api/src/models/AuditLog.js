@@ -33,6 +33,8 @@ const auditLogSchema = new mongoose.Schema({
       'user_request_suspend',
       'user_request_edit',
       'user_request_password_reset',
+      'email_welcome_sent',
+      'email_welcome_failed',
       // Multi-department profiles
       'profile_create',
       'profile_update',

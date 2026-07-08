@@ -3,9 +3,19 @@ const AuditLog = require("../models/AuditLog");
 const DeviceInfoExtractor = require("../utils/deviceInfo");
 const authService = require("../services/authService");
 const { validationResult } = require("express-validator");
+const validator = require("validator");
+const { waitUntil } = require("@vercel/functions");
 const { createAuditLog } = require("../middlewares/auditMiddleware");
 const { userOperations } = require("../utils/databaseUtils");
+const { sendUserWelcomeEmail } = require("../services/emailService");
+const { encrypt: encryptCredential } = require("../utils/tempCredentialCipher");
 const logger = require("../config/logger");
+
+const ALLOWED_ROLES = ['admin', 'hod', 'user'];
+const normalizeRole = (role) => {
+  const normalized = String(role || '').trim().toLowerCase();
+  return ALLOWED_ROLES.includes(normalized) ? normalized : null;
+};
 
 // Helper function to normalize confidentiality level values
 const normalizeConfidentialityValue = (value) => {
@@ -47,9 +57,21 @@ const authController = {
         return res.status(400).json({ success: false, errors: errors.array() });
       }
 
-      const { name, email, password, department, departments, confidentialityLevel } = req.body;
+      const { name, email, password, department, departments, confidentialityLevel, role } = req.body;
 
-      const existingUser = await userOperations.findOne({ email });
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (!normalizedEmail || !validator.isEmail(normalizedEmail)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+      }
+
+      const normalizedRole = role !== undefined && role !== null && role !== ''
+        ? normalizeRole(role)
+        : 'user';
+      if (!normalizedRole) {
+        return res.status(400).json({ success: false, message: 'Role must be admin, hod, or user' });
+      }
+
+      const existingUser = await userOperations.findOne({ email: normalizedEmail });
 
       if (existingUser) {
         if (existingUser.status === "deleted") {
@@ -103,10 +125,10 @@ const authController = {
 
 const user = await User.create({
          name,
-         email,
+         email: normalizedEmail,
          password,
          department: finalDepartment,
-         role: "user",
+         role: normalizedRole,
          confidentialityLevels: confidentialityLevels,
          // singular deprecated - never set to avoid frontend conflict
          passwordLastChanged: new Date(),
@@ -123,6 +145,8 @@ const user = await User.create({
        await user.save();
 
        await user.addToPasswordHistory();
+       user.pendingWelcomeCredential = encryptCredential(password);
+       await user.save();
 
        const deviceInfo = req.deviceInfo || DeviceInfoExtractor.extractFromRequest(req);
        const summary = `${user.name} registered from ${deviceInfo.machine?.machineName || deviceInfo.device?.deviceName || "Unknown Device"}`;
@@ -159,6 +183,8 @@ const user = await User.create({
 
        res.status(201).json({
          success: true,
+         message: 'User registered successfully. Welcome email is being delivered.',
+         emailQueued: true,
          data: {
            user: {
              id: user._id,
@@ -187,6 +213,19 @@ const user = await User.create({
            rememberMe: false,
          },
        });
+
+       // Fire-and-forget: never let SMTP latency delay the registration response.
+       // waitUntil keeps the Vercel serverless function alive until this settles.
+       waitUntil(
+         sendUserWelcomeEmail({
+           user,
+           password,
+           role: user.role,
+           createdBy: user
+         }).catch((emailError) => {
+           logger.error(`Welcome email failed for auth_register (${user.email}): ${emailError.message}`);
+         })
+       );
     } catch (error) {
       next(error);
     }

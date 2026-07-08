@@ -1,60 +1,86 @@
-const nodemailer = require('nodemailer');
+const logger = require('../config/logger');
+const AuditLog = require('../models/AuditLog');
+const { sendMailWithRetry } = require('../utils/mailer');
+const { WELCOME_EMAIL_SUBJECT, buildWelcomeEmailHtml, buildWelcomeEmailText } = require('../templates/welcomeEmail');
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: process.env.SMTP_PORT || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
-
-async function sendEmail(to, subject, html) {
+async function writeEmailAuditLog({ action, user, createdBy, details }) {
   try {
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.log('Email not configured. Skipping send.');
-      return { success: true, skipped: true };
-    }
-
-    const info = await transporter.sendMail({
-      from: `"DMS System" <${process.env.EMAIL_FROM || process.env.SMTP_USER}>`,
-      to,
-      subject,
-      html
+    await AuditLog.create({
+      userId: user._id,
+      userEmail: user.email,
+      action,
+      resource: 'user',
+      resourceId: user._id.toString(),
+      details: {
+        recipient: user.email,
+        createdBy: createdBy ? { id: createdBy._id, email: createdBy.email } : undefined,
+        timestamp: new Date(),
+        ...details
+      }
     });
-
-    console.log('Email sent:', info.messageId);
-    return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.error('Email send error:', error.message);
-    return { success: false, error: error.message };
+  } catch (auditError) {
+    logger.error(`Failed to write ${action} audit log for ${user.email}: ${auditError.message}`);
   }
 }
 
-async function sendWelcomeEmail(user) {
-  const subject = 'Welcome to DMS - Your Account Details';
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #333;">Welcome to DMS!</h2>
-      <p>Hello <strong>${user.name}</strong>,</p>
-      <p>Your account has been created successfully. Here are your login details:</p>
-      <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-        <p><strong>Email:</strong> ${user.email}</p>
-        <p><strong>Password:</strong> ${user.password}</p>
-      </div>
-      <p>Please login and change your password after first login.</p>
-      <p>Login URL: <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}">${process.env.CLIENT_URL || 'http://localhost:5173'}</a></p>
-      <p style="color: #666; font-size: 12px; margin-top: 30px;">
-        This is an automated message. Please do not reply.
-      </p>
-    </div>
-  `;
+/**
+ * Sends the account-onboarding email to a user.
+ * Idempotent by default: skips silently if this user already has a recorded send
+ * (see welcomeEmailSentAt). Pass force:true to bypass that guard (used by the
+ * admin-triggered resend-welcome-email endpoint).
+ */
+async function sendUserWelcomeEmail({ user, password, role, createdBy, force = false }) {
+  const { name, email, department } = user;
 
-  return sendEmail(user.email, subject, html);
+  if (user.welcomeEmailSentAt && !force) {
+    logger.info(`Email skipped: welcome email already sent to ${email} at ${user.welcomeEmailSentAt.toISOString()}`);
+    return { success: true, skipped: true, reason: 'already_sent' };
+  }
+
+  logger.info(`Email queued: welcome email for ${email}`);
+
+  const html = buildWelcomeEmailHtml({ name, email, password, department, role });
+  const text = buildWelcomeEmailText({ name, email, password, department, role });
+
+  const result = await sendMailWithRetry({
+    from: process.env.EMAIL_FROM || `"RHV DMS" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject: WELCOME_EMAIL_SUBJECT,
+    html,
+    text
+  });
+
+  if (result.success) {
+    if (!result.skipped) {
+      logger.info(`Email sent: welcome email to ${email} (messageId: ${result.messageId})`);
+    }
+
+    user.welcomeEmailSentAt = new Date();
+    user.pendingWelcomeCredential = null;
+    await user.save();
+
+    await writeEmailAuditLog({
+      action: 'email_welcome_sent',
+      user,
+      createdBy,
+      details: { deliveryStatus: result.skipped ? 'skipped_not_configured' : 'sent' }
+    });
+
+    return result;
+  }
+
+  logger.error(`Email failed: welcome email to ${email} - ${result.error}`);
+
+  await writeEmailAuditLog({
+    action: 'email_welcome_failed',
+    user,
+    createdBy,
+    details: { smtpError: result.error }
+  });
+
+  return result;
 }
 
 module.exports = {
-  sendEmail,
-  sendWelcomeEmail
+  sendUserWelcomeEmail
 };

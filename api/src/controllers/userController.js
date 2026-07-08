@@ -3,7 +3,10 @@ const AuditLog = require('../models/AuditLog');
 const Notification = require('../models/Notification');
 const Department = require('../models/Department');
 const { validationResult } = require('express-validator');
-const { sendWelcomeEmail } = require('../services/emailService');
+const validator = require('validator');
+const { waitUntil } = require('@vercel/functions');
+const { sendUserWelcomeEmail } = require('../services/emailService');
+const { encrypt: encryptCredential, decrypt: decryptCredential } = require('../utils/tempCredentialCipher');
 const logger = require("../config/logger");
 
 const ALLOWED_ROLES = ['admin', 'hod', 'user'];
@@ -172,6 +175,12 @@ const userController = {
       }
 
       const { name, email, password, department, role, confidentialityLevels, confidentialityLevel } = req.body;
+
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (!normalizedEmail || !validator.isEmail(normalizedEmail)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+      }
+
       const normalizedRole = normalizeRole(role);
       if (!normalizedRole) {
         return res.status(400).json({ success: false, message: 'Role is required (admin, hod, or user)' });
@@ -182,7 +191,7 @@ const userController = {
         return res.status(400).json({ success: false, message: normalizedConfidentiality.error });
       }
 
-      const existingUser = await User.findOne({ email });
+      const existingUser = await User.findOne({ email: normalizedEmail });
       if (existingUser) {
         return res.status(400).json({ success: false, message: 'Email already registered' });
       }
@@ -223,7 +232,7 @@ department: department.toUpperCase(),
 
        const user = await User.create({
          name,
-         email,
+         email: normalizedEmail,
          password,
          department: finalDepartment,
          role: normalizedRole,
@@ -233,13 +242,8 @@ department: department.toUpperCase(),
        });
 
       await user.addToPasswordHistory();
+      user.pendingWelcomeCredential = encryptCredential(password);
       await user.save();
-
-      await sendWelcomeEmail({
-        name: user.name,
-        email: user.email,
-        password: password
-      });
 
       try {
         await AuditLog.create({
@@ -257,6 +261,8 @@ department: department.toUpperCase(),
 
       res.status(201).json({
         success: true,
+        message: 'User created successfully. Welcome email is being delivered.',
+        emailQueued: true,
         data: {
           id: user._id,
           name: user.name,
@@ -266,6 +272,68 @@ department: department.toUpperCase(),
           confidentialityLevels: user.confidentialityLevels,
           confidentialityLevel: user.getConfidentialityLevel()
         }
+      });
+
+      // Fire-and-forget: send the welcome email in the background so SMTP latency
+      // never delays the response. waitUntil keeps the Vercel serverless function
+      // alive until this promise settles (locally it's a plain no-op passthrough).
+      waitUntil(
+        sendUserWelcomeEmail({
+          user,
+          password,
+          role: user.role,
+          createdBy: req.user
+        }).catch((emailError) => {
+          logger.error(`Welcome email failed for user_create (${user.email}): ${emailError.message}`);
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  resendWelcomeEmail: async (req, res, next) => {
+    try {
+      if (!require('mongoose').Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Valid user ID is required' });
+      }
+
+      const user = await User.findById(req.params.id).select('+pendingWelcomeCredential');
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      if (!user.pendingWelcomeCredential) {
+        return res.status(400).json({
+          success: false,
+          message: 'No pending welcome credential available for this user. Use password reset to issue new credentials instead.'
+        });
+      }
+
+      let plainPassword;
+      try {
+        plainPassword = decryptCredential(user.pendingWelcomeCredential);
+      } catch (decryptError) {
+        logger.error(`Failed to decrypt pending welcome credential for ${user.email}: ${decryptError.message}`);
+        return res.status(500).json({ success: false, message: 'Unable to process resend request' });
+      }
+
+      const emailResult = await sendUserWelcomeEmail({
+        user,
+        password: plainPassword,
+        role: user.role,
+        createdBy: req.user,
+        force: true
+      });
+
+      const emailSent = Boolean(emailResult && emailResult.success && !emailResult.skipped);
+
+      res.json({
+        success: true,
+        emailSent,
+        message: emailSent
+          ? 'Welcome email resent successfully.'
+          : 'Failed to resend welcome email. Please try again later.'
       });
     } catch (error) {
       next(error);

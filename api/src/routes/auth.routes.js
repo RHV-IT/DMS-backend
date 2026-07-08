@@ -18,7 +18,6 @@ router.post(
   '/register',
   [
     body('name').notEmpty().withMessage('Name is required'),
-    body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters'),
     body('department').notEmpty().withMessage('Department is required')
   ],
